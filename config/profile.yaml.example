@@ -1,0 +1,42 @@
+# JobHunter AI — User Profile
+# Copy this to profile.yaml and customize.
+
+name: "Your Name"
+email: "you@example.com"
+location: "City, ST"
+willing_to_relocate: true
+relocation_cities:
+  - "San Francisco, CA"
+  - "New York, NY"
+remote_ok: true
+
+years_experience: 3
+target_level: "mid"  # intern, junior, mid, senior, lead, manager
+exclude_levels: ["intern"]
+
+target_roles:
+  - "Software Engineer"
+  - "Backend Engineer"
+
+skills:
+  - Python
+  - Go
+  - PostgreSQL
+
+boost_keywords:
+  - "backend"
+  - "distributed"
+  - "systems"
+
+# Companies to live-scrape (slug per ATS platform)
+preferred_companies:
+  greenhouse:
+    - "anthropic"
+    - "stripe"
+  lever:
+    - "netflix"
+  # workday format: "company|instance|site"
+  # ashby: just the slug
+
+exclude_recruiters: true
+exclude_staffing: true

@@ -1,0 +1,79 @@
+name: "Aditya Mujumdar"
+email: "adityamujumdar09@gmail.com"
+location: "Chandler, AZ"
+willing_to_relocate: true
+relocation_cities:
+  - "San Francisco, CA"
+  - "Seattle, WA"
+  - "New York, NY"
+  - "Austin, TX"
+  - "Denver, CO"
+remote_ok: true
+
+years_experience: 5
+target_level: "mid"
+exclude_levels: ["intern"]
+
+target_roles:
+  - "Business Intelligence"
+  - "BI Developer"
+  - "BI Engineer"
+  - "BI Analyst"
+  - "Data Analyst"
+  - "Business Analyst"
+  - "Analytics Engineer"
+  - "Data Engineer"
+  - "Analytics Manager"
+  - "Business Intelligence Manager"
+
+skills:
+  - Python
+  - SQL
+  - Tableau
+  - Power BI
+  - Azure
+  - R
+  - VBA
+  - Oracle SQL
+  - SPSS
+  - Google Analytics
+  - Adobe Analytics
+  - Kibana
+  - ETL
+  - Machine Learning
+  - Financial Modeling
+
+boost_keywords:
+  - "analytics"
+  - "intelligence"
+  - "reporting"
+  - "dashboard"
+  - "visualization"
+  - "data"
+  - "insights"
+  - "forecast"
+
+preferred_companies:
+  greenhouse:
+    - "anthropic"
+    - "figma"
+    - "stripe"
+    - "notion"
+    - "databricks"
+    - "snowflakecomputing"
+    - "plaid"
+    - "brex"
+    - "ramp"
+    - "relativityspace"
+  lever:
+    - "netflix"
+    - "twitch"
+  workday:
+    - "nvidia|wd5|NVIDIAExternalCareerSite"
+    - "intel|wd1|External"
+  ashby:
+    - "1password"
+    - "linear"
+
+exclude_recruiters: true
+exclude_staffing: true

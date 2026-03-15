@@ -1,15 +1,19 @@
 # Secrets
 .env
 
-# User data (PII)
-data/profile.json
-data/companies.json
-data/connections.json
+# Data (gitignored — daily output, PII)
+data/jba/
 data/jobs/
 data/scored/
 data/reports/
+data/profile.json
+data/companies.json
+data/connections.json
 data/logs/
 data/debug/
+
+# Test fixtures (auto-generated)
+tests/fixtures/
 
 # Resumes (personal)
 resumes/
@@ -22,6 +26,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+*.egg-info/
 
 # OS
 .DS_Store
+
+# IDE
+.idea/
+.vscode/
