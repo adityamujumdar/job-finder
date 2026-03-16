@@ -56,9 +56,29 @@ echo "=== JobHunter AI — Prerequisite Check ==="
 [ -f "RESUME.md" ] && echo "✅ RESUME.md found" || echo "⚠️  No RESUME.md — run: cp RESUME.md.example RESUME.md (needed for resume tailoring)"
 ```
 
+```bash
+# Profile staleness check — detect if profile changed since last score.
+# If stale, the matcher step below will rescore automatically.
+python3 -c "
+import json, sys
+from src.config import profile_hash, SCORED_DIR, today
+meta_path = SCORED_DIR / f'{today()}.meta.json'
+if not meta_path.exists():
+    print('ℹ️  No scored data yet — will score fresh')
+    sys.exit(0)
+meta = json.load(open(meta_path))
+current = profile_hash()
+if meta.get('profile_hash') != current:
+    print(f'⚠️  Profile changed since last score (was {meta[\"profile_hash\"]}, now {current}). Will rescore.')
+else:
+    print(f'✅ Profile hash: {current} (matches scored data)')
+" 2>/dev/null || echo "⚠️  Could not check profile staleness — will rescore to be safe"
+```
+
 If profile.yaml is missing: offer to set up the profile now (see Profile Setup below).
 If .venv is missing: show the fix and stop.
 If only RESUME.md is missing: continue with a warning — pipeline still works, tailoring won't.
+If profile staleness check shows ⚠️: proceed with the pipeline — Step 2 (matcher) will regenerate scored data and the new `.meta.json` against the current profile.
 
 ---
 
@@ -102,6 +122,7 @@ python -m src.scraper --skip-live  # fast: JBA download only (~15s, skip live sc
 ### Match
 ```bash
 python -m src.matcher   # score all jobs against profile (~8s, 502K jobs)
+# Also writes data/scored/DATE.meta.json with profile fingerprint for staleness detection
 ```
 
 ### Report

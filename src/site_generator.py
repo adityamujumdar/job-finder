@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 
 from src.config import (
-    load_profile, today, ensure_dirs,
+    load_profile, profile_hash, today, ensure_dirs,
     SCORED_DIR, REPORTS_DIR, PROJECT_ROOT,
 )
 
@@ -74,6 +74,50 @@ def _load_yesterday_ids(date_str: str) -> set[str]:
         return set()
 
 
+def _check_staleness(date_str: str) -> dict:
+    """Check if scored data matches the current profile.
+
+    Compares profile_hash() (current profile) against the hash stored
+    in the .meta.json sidecar written by matcher.run_matcher().
+
+    Returns dict with:
+      - "status": "fresh" | "stale" | "unknown"
+      - "stored_hash": str or None
+      - "current_hash": str
+      - "stored_roles": list or None
+    """
+    current_hash = profile_hash()
+    meta_path = SCORED_DIR / f"{date_str}.meta.json"
+
+    if not meta_path.exists():
+        return {
+            "status": "unknown",
+            "stored_hash": None,
+            "current_hash": current_hash,
+            "stored_roles": None,
+        }
+
+    try:
+        with open(meta_path) as f:
+            meta = json.load(f)
+        stored_hash = meta.get("profile_hash", "")
+        stored_roles = meta.get("target_roles", [])
+        status = "fresh" if stored_hash == current_hash else "stale"
+        return {
+            "status": status,
+            "stored_hash": stored_hash,
+            "current_hash": current_hash,
+            "stored_roles": stored_roles,
+        }
+    except (json.JSONDecodeError, OSError, KeyError):
+        return {
+            "status": "unknown",
+            "stored_hash": None,
+            "current_hash": current_hash,
+            "stored_roles": None,
+        }
+
+
 def generate_site(date_str: str | None = None) -> str:
     """Generate static HTML dashboard.
 
@@ -111,6 +155,17 @@ def generate_site(date_str: str | None = None) -> str:
         profile_name = "Job Seeker"
         profile_roles = ""
 
+    # Check profile staleness — warn only, do NOT auto-rescore.
+    # Rescoring is the SKILL.md orchestration layer's job, not site_generator's.
+    # This keeps the dependency graph clean: site_generator never imports matcher.
+    staleness = _check_staleness(date_str)
+    if staleness["status"] == "stale":
+        log.warning("Profile changed since last score (stored: %s, current: %s). "
+                    "Dashboard may show stale results. Re-run: python -m src.matcher",
+                    staleness["stored_hash"], staleness["current_hash"])
+    elif staleness["status"] == "unknown":
+        log.warning("No meta file for %s — cannot verify profile match.", date_str)
+
     jobs_json = json.dumps(jobs, separators=(",", ":"))
 
     site_dir = SITE_DIR
@@ -126,6 +181,7 @@ def generate_site(date_str: str | None = None) -> str:
         top_companies=top_companies,
         profile_name=profile_name,
         profile_roles=profile_roles,
+        staleness_status=staleness["status"],
     )
 
     output_path.write_text(html_content, encoding="utf-8")
@@ -136,22 +192,31 @@ def generate_site(date_str: str | None = None) -> str:
 
 
 def _build_html(*, jobs_json, date_str, p1, p2, p3, new_count, total,
-                top_companies, profile_name, profile_roles) -> str:
-    """Build the full HTML dashboard with company/location/ATS dropdown filters."""
-def _build_html(*, jobs_json, date_str, p1, p2, p3, new_count, total,
-                top_companies, profile_name, profile_roles) -> str:
+                top_companies, profile_name, profile_roles,
+                staleness_status="unknown") -> str:
     """Build the full HTML dashboard — clean, minimal, job-focused."""
 
     import json as _json
     _jobs = _json.loads(jobs_json)
     _unique_cos = len(set(j["c"] for j in _jobs if j.get("c")))
 
-    # Header subtitle: roles · P1/P2/P3 counts · new · date
+    # Header subtitle: staleness indicator · roles · P1/P2/P3 counts · new · date
+    #   fresh   → "✅ BI Developer, Data Analyst · 51 P1 · 1188 P2 · ..."
+    #   stale   → "⚠️ Stale — profile changed · 51 P1 · ..."
+    #   unknown → "BI Developer, Data Analyst · 51 P1 · ..."  (no indicator)
     stats_parts = [f"{p1} P1", f"{p2} P2", f"{p3} P3"]
     if new_count:
         stats_parts.append(f"{new_count} new today")
     stats_str = " · ".join(stats_parts) + f" · {date_str}"
-    subtitle = f"{html.escape(profile_roles)} · {stats_str}" if profile_roles else stats_str
+
+    if staleness_status == "fresh":
+        roles_display = f"✅ {html.escape(profile_roles)}" if profile_roles else ""
+    elif staleness_status == "stale":
+        roles_display = f"⚠️ Stale — profile changed since last score"
+    else:
+        roles_display = html.escape(profile_roles) if profile_roles else ""
+
+    subtitle = f"{roles_display} · {stats_str}" if roles_display else stats_str
 
     return f'''<!DOCTYPE html>
 <html lang="en" class="scroll-smooth">

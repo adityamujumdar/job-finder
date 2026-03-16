@@ -82,6 +82,31 @@ git clone https://github.com/adityamujumdar/job-finder.git ~/projects/job-finder
 cd ~/projects/job-finder && ./setup
 ```
 
+## Critical Rules
+
+1. **Profile staleness check — ALWAYS verify before showing results.**
+   Scored data is generated against a specific `config/profile.yaml`. If the profile
+   changes after scoring, all results are wrong (a BI analyst's scores mean nothing
+   for a Fashion Designer). Before showing scored results, running the report, or
+   generating the dashboard:
+   ```bash
+   python3 -c "
+   import json, sys
+   from src.config import profile_hash, SCORED_DIR, today
+   meta_path = SCORED_DIR / f'{today()}.meta.json'
+   if not meta_path.exists():
+       print('⚠️  No meta file — rescore needed'); sys.exit(1)
+   meta = json.load(open(meta_path))
+   current = profile_hash()
+   if meta.get('profile_hash') != current:
+       print(f'⚠️  Profile changed (was {meta[\"profile_hash\"]}, now {current}) — rescore needed')
+       sys.exit(1)
+   print(f'✅ Profile: {current}')
+   "
+   ```
+   If the check fails or meta file is missing: run `python -m src.matcher` first.
+   **Never show scored results without verifying the profile hash.**
+
 ## Known Gotchas
 
 - Lever APIs are flaky (Netflix times out at 30s) — has retry with 60s timeout

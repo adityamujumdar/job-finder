@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config import (
-    load_profile, today, ensure_dirs,
+    load_profile, profile_hash, today, ensure_dirs,
     JOBS_DIR, SCORED_DIR, WEIGHTS, PRIORITY_TIERS, PHOENIX_METRO, STALE_DAYS,
     COMPANY_BLOCKLIST,
 )
@@ -414,9 +414,29 @@ def run_matcher(date: str | None = None, min_score: float = 0) -> dict:
     for job in scored:
         tier_counts[job["_priority"]] = tier_counts.get(job["_priority"], 0) + 1
 
-    # Save
+    # Save scored jobs
     with open(output_path, "w") as f:
         json.dump(scored, f)
+
+    # Write profile metadata sidecar for staleness detection.
+    # site_generator and SKILL.md read this to verify scored data
+    # was generated against the current profile.
+    hash_val = profile_hash()
+    target_roles = profile.get("target_roles", [])
+    meta = {
+        "profile_hash": hash_val,
+        "target_roles": target_roles,
+        "scored_at": date_str,
+        "total_scanned": len(jobs),
+        "total_scored": len(scored),
+        "tiers": tier_counts,
+    }
+    meta_path = SCORED_DIR / f"{date_str}.meta.json"
+    try:
+        with open(meta_path, "w") as f:
+            json.dump(meta, f, indent=2)
+    except (IOError, OSError) as e:
+        log.warning("Could not write meta file %s: %s", meta_path, e)
 
     result = {
         "date": date_str,
@@ -427,8 +447,10 @@ def run_matcher(date: str | None = None, min_score: float = 0) -> dict:
         "tiers": tier_counts,
         "elapsed_seconds": round(elapsed, 2),
         "output_path": str(output_path),
+        "profile_hash": hash_val,
     }
 
+    log.info("Profile: %s (%s)", hash_val, ", ".join(target_roles[:3]))
     log.info("Scored %d jobs in %.2fs (excluded %d, below-min %d)",
              len(scored), elapsed, excluded, below_min)
     log.info("Tiers: P1=%d, P2=%d, P3=%d, P4=%d",

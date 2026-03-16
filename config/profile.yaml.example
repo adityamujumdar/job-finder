@@ -1,42 +1,73 @@
 # JobHunter AI — User Profile
 # Copy this to profile.yaml and customize.
+#
+# Every field here affects how 502K+ jobs are scored and ranked.
+# After editing, re-run the pipeline: python -m src.matcher
+# (or just run /jobhunter — it auto-detects profile changes)
 
 name: "Your Name"
 email: "you@example.com"
+
+# Your current city. Jobs here score 1.0 on location (20% of total score).
+# Nearby metro cities score 0.95. Same state scores 0.8.
 location: "City, ST"
+
 willing_to_relocate: true
+
+# Cities you'd move to. Jobs in these cities score 0.7 on location.
+# Jobs in the same STATE as a relocation city score 0.6.
 relocation_cities:
   - "San Francisco, CA"
   - "New York, NY"
+
+# If true, "Remote" jobs score 1.0 on location (same as your home city).
 remote_ok: true
 
 years_experience: 3
-target_level: "mid"  # intern, junior, mid, senior, lead, manager
+
+# Target seniority. Exact match = 1.0 (15% of score).
+# One level off (e.g., "mid" target but "senior" job) = 0.7.
+# Options: intern, entry, mid, senior, lead, manager
+target_level: "mid"
+
+# Jobs at these levels are excluded entirely (pre-filter, not scored).
 exclude_levels: ["intern"]
 
+# ⭐ MOST IMPORTANT FIELD — drives 35% of your score (title_match).
+# Each role is matched as a PHRASE against job titles.
+# "Data Engineer" matches "Senior Data Engineer" but NOT "Data Center Engineer".
+# BI ↔ "Business Intelligence" expansion is automatic.
+# Add more roles = cast a wider net. Be specific: "BI Analyst" > "Analyst".
 target_roles:
   - "Software Engineer"
   - "Backend Engineer"
 
+# Technical skills. Currently used for keyword_boost matching (15% of score).
 skills:
   - Python
   - Go
   - PostgreSQL
 
+# Keywords that boost score when found in job TITLE (not description).
+# Each keyword found adds to keyword_boost (15% of score).
+# Normalized: min(matches / 2, 1.0) — so 2+ keyword matches = full boost.
 boost_keywords:
   - "backend"
   - "distributed"
   - "systems"
 
-# Companies to live-scrape (slug per ATS platform)
+# Companies to live-scrape for freshest data (10% of score as company_preference).
+# Jobs at preferred companies get company_preference = 1.0 (vs 0.0 for others).
+# Use the ATS slug from their careers page URL.
 preferred_companies:
   greenhouse:
-    - "anthropic"
-    - "stripe"
+    - "anthropic"     # jobs.greenhouse.io/anthropic
+    - "stripe"        # jobs.greenhouse.io/stripe
   lever:
-    - "netflix"
+    - "netflix"       # jobs.lever.co/netflix
   # workday format: "company|instance|site"
-  # ashby: just the slug
+  # Example: "nvidia|wd5|NVIDIAExternalCareerSite"
+  # ashby: just the slug from jobs.ashby.io/SLUG
 
-exclude_recruiters: true
-exclude_staffing: true
+exclude_recruiters: true    # Filter out staffing/recruiting companies
+exclude_staffing: true      # Filter out known staffing farms (jobgether, etc.)

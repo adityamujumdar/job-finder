@@ -1,5 +1,6 @@
 """Shared configuration — single source of truth for paths, constants, and profile loading."""
 
+import hashlib
 import os
 import yaml
 from datetime import datetime, date
@@ -130,6 +131,29 @@ def load_profile(path: str | Path | None = None) -> dict:
             profile["_preferred_slugs"].add(slug.split("|")[0].lower())
 
     return profile
+
+
+def profile_hash(path: "str | Path | None" = None) -> str:
+    """8-char sha256 of raw profile.yaml content.
+
+    Changes whenever ANY field in profile.yaml changes, signalling that
+    scored data generated against a different profile version is now stale.
+
+    A Business Intelligence analyst and a Fashion Designer produce completely
+    different scored datasets from the same 502K jobs — because title_match
+    (35% of score) runs phrase-matching against target_roles, and keyword_boost
+    (15%) runs against skills + boost_keywords.
+
+    Returns '00000000' if profile.yaml does not exist or cannot be read.
+    """
+    if path is None:
+        path = CONFIG_DIR / "profile.yaml"
+    path = Path(path)
+    try:
+        content = path.read_text(encoding="utf-8")
+        return hashlib.sha256(content.encode()).hexdigest()[:8]
+    except (FileNotFoundError, PermissionError, UnicodeDecodeError, OSError):
+        return "00000000"
 
 
 def today() -> str:
