@@ -15,7 +15,10 @@ data/debug/
 # Test fixtures (auto-generated)
 tests/fixtures/
 
-# Resumes (personal)
+# Personal resume files — not committed to public repo
+# Create your own: cp RESUME.md.example RESUME.md  (then fill in your info)
+RESUME.md
+*.tex
 resumes/
 
 # G-Stack state

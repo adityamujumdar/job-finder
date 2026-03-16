@@ -1,0 +1,58 @@
+# [Your Full Name] — Resume
+
+> **How to use this file:**
+> 1. Copy it: `cp RESUME.md.example RESUME.md`
+> 2. Fill in your real information (RESUME.md is gitignored — safe to put personal details)
+> 3. Claude reads RESUME.md when tailoring your resume for specific jobs
+> 4. Keep your LaTeX/PDF resume separate for printing; RESUME.md is Claude's source of truth
+
+**Contact:** [City, ST] · [your@email.com] · [LinkedIn URL]
+
+---
+
+## Experience
+
+### [Company Name] — [Job Title]
+**[Start Date] – [End Date or Present]**
+
+- [What you accomplished — use numbers: "Increased X by Y%", "Built Z that saved $N"]
+- [Key project or initiative you led]
+- [Tools/technologies you used: SQL, Python, Tableau, etc.]
+- [Team impact: "Managed N engineers", "Cross-functional with sales/finance"]
+
+### [Company Name] — [Job Title]
+**[Start Date] – [End Date]**
+
+- [Accomplishment with metric]
+- [Technical achievement]
+- [Business impact]
+
+### [Company Name] — [Job Title]
+**[Start Date] – [End Date]**
+
+- [Accomplishment with metric]
+- [Technical skill demonstrated]
+
+---
+
+## Projects
+
+- **[Project Name]** — [One-line description] — *[Technologies used]*
+- **[Project Name]** — [One-line description] — *[Technologies used]*
+
+---
+
+## Skills & Tools
+
+**Programming:** [e.g., Python, SQL, R, VBA]
+**BI & Analytics:** [e.g., Tableau, Power BI, Looker, dbt]
+**Data & Cloud:** [e.g., AWS, Azure, GCP, Snowflake, Databricks]
+**Other:** [e.g., Excel, JIRA, Confluence]
+
+---
+
+## Education
+
+**[University Name]**
+- [Degree] · [Major]
+- [Certificate or minor, if relevant]
