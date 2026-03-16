@@ -279,7 +279,7 @@ preferred_companies:
     - "plaid"
     - "brex"
     - "ramp"
-    - "relataboratories"
+    - "relativityspace"
   lever:
     - "netflix"
     - "twitch"
@@ -643,8 +643,8 @@ REPORT:
 | Item | Rationale |
 |---|---|
 | Auto-submit applications | Legal/ethical — draft only |
-| Web UI | CLI/terminal-native, Claude skill |
-| Multi-user | Personal tool |
+| ~~Web UI~~ | ~~CLI/terminal-native, Claude skill~~ → Now: Static HTML dashboard on GitHub Pages |
+| Multi-user | Profile-based — fork and customize |
 | Full JBA repo fork | Vendor fetcher + download data only |
 | Company-level scoring | Wrong approach — score at job level |
 | Mobile app | CLI |

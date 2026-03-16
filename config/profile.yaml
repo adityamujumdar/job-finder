@@ -66,11 +66,11 @@ preferred_companies:
     - "ramp"
     - "relativityspace"
   lever:
-    - "netflix"
     - "twitch"
   workday:
     - "nvidia|wd5|NVIDIAExternalCareerSite"
     - "intel|wd1|External"
+    - "netflix|wd1|netflix"
   ashby:
     - "1password"
     - "linear"

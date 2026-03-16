@@ -16,9 +16,35 @@ from pathlib import Path
 from src.config import (
     load_profile, today, ensure_dirs,
     JOBS_DIR, SCORED_DIR, WEIGHTS, PRIORITY_TIERS, PHOENIX_METRO, STALE_DAYS,
+    COMPANY_BLOCKLIST,
 )
 
 log = logging.getLogger(__name__)
+
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+# Titles containing these words are a DIFFERENT job family — penalize hard
+SWE_FAMILY_WORDS = {
+    "software", "backend", "frontend", "fullstack", "full-stack", "devops",
+    "sre", "ios", "android", "mobile", "web", "react", "node", "java",
+    "ruby", "golang", "rust", "php", "net", "dotnet", "embedded",
+    "backline", "infrastructure", "platform", "reliability", "security",
+    "network", "systems", "cloud", "kubernetes", "ml",
+}
+IRRELEVANT_WORDS = {
+    "center", "controls", "mechanical", "electrical", "civil", "chemical",
+    "facilities", "hvac", "nurse", "nursing", "physician", "clinical",
+    "teacher", "teaching", "sales", "recruiter", "recruiting", "legal",
+    "counsel", "attorney", "janitor", "custodian", "driver", "delivery",
+    "warehouse", "forklift", "cashier", "barista", "cook", "chef",
+}
+
+# BI abbreviation patterns
+BI_PATTERNS = [
+    r'\bbi\b',  # standalone "BI"
+    r'\bbi[-/]',  # "BI-Developer", "BI/Analyst"
+]
 
 
 # ── Scoring Functions ──────────────────────────────────────────────────────────
@@ -28,44 +54,113 @@ def _tokenize(text: str) -> set[str]:
     return set(re.findall(r'[a-z0-9]+', text.lower()))
 
 
-def score_title_match(job_title: str, profile: dict) -> float:
-    """Best fuzzy match of job title vs profile target roles.
+def _normalize_title(title: str) -> str:
+    """Normalize title for matching: lowercase, strip prefixes, clean punctuation."""
+    t = title.lower().strip()
+    # Remove common prefixes/suffixes that don't change the role
+    t = re.sub(r'^(sr\.?|senior|junior|jr\.?|lead|staff|principal|head of|director of|vp of|manager of)\s+', '', t)
+    # Normalize separators
+    t = re.sub(r'\s*[-–—/,|:]\s*', ' - ', t)
+    return t
 
-    Uses two strategies (takes best):
-      1. Jaccard: |intersection| / |union| — good for similar-length titles
-      2. Containment: if ALL role tokens appear in title → high score (0.9+)
-         This handles "Business Intelligence Analyst" matching "Business Intelligence"
-         where Jaccard penalizes the extra token.
+
+def _phrase_in_title(role: str, title: str) -> bool:
+    """Check if the role phrase appears as contiguous words in the title.
+
+    Allows common title prefixes (Senior, Sr., Lead, Staff, II, III) between words
+    but NOT unrelated words like "Center", "Controls", "Software".
+
+    Examples:
+      "Data Engineer" in "Senior Data Engineer" → True
+      "Data Engineer" in "Data Engineer II" → True
+      "Data Engineer" in "Data Center Controls Engineer" → False
+      "BI Analyst" in "Senior BI Analyst - Reporting" → True
+    """
+    role_lower = role.lower().strip()
+    title_lower = title.lower().strip()
+
+    # Direct substring check first (fastest path)
+    if role_lower in title_lower:
+        return True
+
+    # Check with BI expansion: "BI" → also try "Business Intelligence"
+    if re.search(r'\bbi\b', role_lower):
+        expanded = re.sub(r'\bbi\b', 'business intelligence', role_lower)
+        if expanded in title_lower:
+            return True
+
+    # Check if title contains "BI" when role says "Business Intelligence"
+    if 'business intelligence' in role_lower:
+        bi_role = re.sub(r'business intelligence', 'bi', role_lower)
+        if re.search(r'\b' + re.escape(bi_role) + r'\b', title_lower):
+            return True
+
+    return False
+
+
+def score_title_match(job_title: str, profile: dict) -> float:
+    """Score job title vs profile target roles using phrase matching.
+
+    Strategy (in priority order):
+      1. Exact phrase match: role appears as contiguous substring → 0.90-1.0
+      2. BI/abbreviation expansion: "BI" ↔ "Business Intelligence" → 0.90-1.0
+      3. Guarded Jaccard: token overlap BUT only if no SWE/irrelevant family words → 0.0-0.7
 
     Returns best match across all target roles.
     """
     if not job_title:
         return 0.0
 
-    job_tokens = _tokenize(job_title)
-    if not job_tokens:
+    title_lower = job_title.lower().strip()
+    title_tokens = _tokenize(job_title)
+    if not title_tokens:
         return 0.0
 
+    # Check for negative signals — SWE family or irrelevant job families
+    has_swe_words = bool(title_tokens & SWE_FAMILY_WORDS)
+    has_irrelevant = bool(title_tokens & IRRELEVANT_WORDS)
+
+    # Check if title starts with a SWE role (e.g., "Software Engineer ... Data Engineering")
+    title_starts_swe = bool(re.match(
+        r'^(sr\.?|senior|staff|principal|lead)?\s*(software|backend|frontend|fullstack|platform|infrastructure|devops|sre|site reliability)\s+(engineer|developer)',
+        title_lower
+    ))
+
     best = 0.0
+
     for role in profile["_target_roles_lower"]:
         role_tokens = _tokenize(role)
         if not role_tokens:
             continue
 
-        intersection = job_tokens & role_tokens
-        union = job_tokens | role_tokens
+        # Strategy 1: Phrase match (contiguous words)
+        if _phrase_in_title(role, job_title):
+            # If the title STARTS with a SWE role, this is an SWE job that
+            # happens to mention data/analytics — penalize heavily
+            if title_starts_swe:
+                best = max(best, 0.35)
+                continue
 
-        # Strategy 1: Jaccard similarity
+            # Scale by title length — shorter titles = more focused = higher score
+            role_word_count = len(role_tokens)
+            title_word_count = len(title_tokens)
+            # Base 0.90, bonus up to 0.10 for focused titles
+            score = 0.90 + 0.10 * min(role_word_count / title_word_count, 1.0)
+            best = max(best, score)
+            continue
+
+        # Strategy 2: Jaccard similarity (guarded)
+        intersection = title_tokens & role_tokens
+        union = title_tokens | role_tokens
         jaccard = len(intersection) / len(union) if union else 0.0
 
-        # Strategy 2: Containment — all role tokens found in title
-        # "Business Intelligence Analyst" contains all of "Business Intelligence"
-        containment = 0.0
-        if role_tokens <= job_tokens:  # role is subset of job title
-            # Scale by how much of the title is role-relevant (penalize very long titles)
-            containment = 0.9 + 0.1 * (len(role_tokens) / len(job_tokens))
+        # If the title has SWE/irrelevant words AND the overlap is just generic
+        # tokens like "data" or "engineer", heavily penalize
+        if (has_swe_words or has_irrelevant) and jaccard < 0.6:
+            jaccard *= 0.3  # e.g., 0.5 → 0.15
 
-        score = max(jaccard, containment)
+        # Cap Jaccard at 0.7 — phrase match is required for higher scores
+        score = min(jaccard, 0.70)
         best = max(best, score)
 
     return best
@@ -244,6 +339,11 @@ def should_exclude(job: dict, profile: dict) -> bool:
     if profile.get("exclude_recruiters") and job.get("is_recruiter"):
         return True
 
+    # Exclude blocklisted companies (staffing farms, aggregators)
+    company_slug = (job.get("company_slug") or job.get("company") or "").lower().split("|")[0]
+    if company_slug in COMPANY_BLOCKLIST:
+        return True
+
     return False
 
 
@@ -294,6 +394,12 @@ def run_matcher(date: str | None = None, min_score: float = 0) -> dict:
             continue
 
         priority = classify_priority(score)
+        
+        # Only keep P1-P3 in output (P4 is 97%+ of jobs, wastes disk)
+        if priority == "P4":
+            below_min += 1
+            continue
+        
         job["_score"] = score
         job["_priority"] = priority
         scored.append(job)

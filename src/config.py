@@ -49,6 +49,18 @@ PHOENIX_METRO = {
     "queen creek", "maricopa", "fountain hills", "cave creek", "carefree",
 }
 
+# Company blocklist — staffing farms and aggregators that pollute results
+COMPANY_BLOCKLIST = {
+    "jobgether",           # Job aggregator (19K+ listings, not a real employer)
+    "launch2",             # Staffing firm
+    "globalhr",            # HR/staffing aggregator
+    "ghr",                 # Staffing
+    "svetness",            # Personal training franchise (mass-posts irrelevant jobs)
+    "bluelightconsulting",  # Staffing (already flagged is_recruiter but belt-and-suspenders)
+    "tsmg",                # Staffing
+    "pae",                 # Staffing/contracting
+}
+
 # JBA GitHub repo info
 JBA_REPO = "Feashliaa/job-board-aggregator"
 JBA_BRANCH = "main"

@@ -14,7 +14,7 @@ JobHunter AI — a Claude skill that automates job discovery across 502K+ jobs f
 
 **Tier 2 — Live Scrape:** `src/jba_fetcher.py` (vendored from JBA, MIT license) scrapes only preferred companies (~50-100) across 6 ATS platforms (Greenhouse, Lever, Workday, Ashby, BambooHR, Workable).
 
-**Pipeline:** `src/scraper.py` (orchestrator) → `src/matcher.py` (job-level scoring) → `src/report.py` (CSV + terminal summary). Shared config loading via `src/config.py`.
+**Pipeline:** `src/scraper.py` (orchestrator) → `src/matcher.py` (job-level scoring) → `src/report.py` (CSV + terminal summary) → `src/site_generator.py` (static HTML dashboard for GitHub Pages). Shared config loading via `src/config.py`.
 
 **Orchestration:** Claude runs the pipeline via SKILL.md skill definition. User says "find me jobs" → Claude runs each step and presents results.
 
@@ -28,6 +28,7 @@ source .venv/bin/activate
 python -m src.scraper [--skip-download] [--skip-live] [--live-only]
 python -m src.matcher [--date YYYY-MM-DD] [--min-score 50]
 python -m src.report [--date YYYY-MM-DD] [--top N]
+python -m src.site_generator [--date YYYY-MM-DD]  # Generate static HTML dashboard
 
 # Tests
 pytest tests/unit/           # Fast (<1s), 79 tests, no network
@@ -44,8 +45,9 @@ pytest                       # All tests
 - **Dual dedup:** JBA's URL-based `get_dedup_key` primary + `(ats, slug, job_id)` composite fallback
 - **Vendored JBA fetcher** with SHA marker + update script (not git submodule)
 - **Profile config in YAML** (`config/profile.yaml`), loaded via shared `src/config.py`
-- **Title match uses containment + Jaccard** — ensures "BI Analyst" ⊂ "BI Analyst - Reporting" scores high
+- **Title match uses phrase matching** (v2) — requires contiguous word match, not token bags. "Data Engineer" matches "Senior Data Engineer" but NOT "Data Center Controls Engineer". SWE-family titles are penalized. BI ↔ "Business Intelligence" expansion.
 - **Location match uses word boundaries** — prevents "ca" (California) from matching "Chicago"
+- **Company blocklist** — staffing farms (jobgether, launch2, globalhr, etc.) excluded alongside is_recruiter filter
 
 ## Scoring Weights
 
@@ -55,7 +57,7 @@ title_match (0.35), location_match (0.20), level_match (0.15), keyword_boost (0.
 
 - Download: 502,747 jobs in 1.3s (21 chunks, 10 workers)
 - Scoring: 477,776 jobs scored in 8.0s (24,971 filtered as interns/recruiters)
-- Results: 61 P1, 2,215 P2, 10,112 P3
+- Results: 51 P1, 1,188 P2, 6,976 P3 (zero false positives in P1)
 - Live scrape: Anthropic=450 jobs, 1Password=69 jobs (validated)
 
 ## Data Layout
