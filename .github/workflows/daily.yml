@@ -105,23 +105,25 @@ jobs:
             python -m src.site_generator
           else
             echo "=== Push deploy: rebuilding site from cached scored data ==="
-            # Find the most recent scored file available
-            LATEST=$(ls -t data/scored/*.json 2>/dev/null | head -1)
+            # Find the most recent scored file (exclude .meta.json sidecar files)
+            LATEST=$(ls -t data/scored/*.json 2>/dev/null | grep -v '\.meta\.json$' | head -1)
             if [[ -z "$LATEST" ]]; then
-              echo "❌ No cached scored data found."
-              echo "   Run 'Actions → Daily Job Pipeline → Run workflow' once to initialize."
-              exit 1
+              echo "⚠️  No cached scored data — running full pipeline to bootstrap"
+              python -m src.scraper --skip-live
+              python -m src.matcher
+              python -m src.report
+              python -m src.site_generator
+            else
+              DATE=$(basename "$LATEST" .json)
+              echo "Using scored data from $DATE"
+              python -m src.site_generator --date "$DATE"
             fi
-            DATE=$(basename "$LATEST" .json)
-            echo "Using scored data from $DATE"
-            python -m src.site_generator --date "$DATE"
           fi
 
       # Save today's scored data so tomorrow's run can compute "new today"
-      # Skip on push (we only have cached data, not fresh download)
-      # Skip if today's key already exists in cache (cron ran twice)
+      # Skip if today's key already exists in cache (cron ran twice, or push hit cache)
       - name: Save scored data cache
-        if: github.event_name != 'push' && steps.restore-scored.outputs.cache-hit != 'true'
+        if: steps.restore-scored.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: data/scored/
