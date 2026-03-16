@@ -66,6 +66,22 @@ title_match (0.35), location_match (0.20), level_match (0.15), keyword_boost (0.
 - `data/jba/`, `data/jobs/`, `data/scored/`, `data/reports/` — **gitignored** daily output
 - `config/profile.yaml` — user preferences, target roles, preferred companies
 
+## job-finder Skills (Claude Slash Commands)
+
+These skills are available when working in this project (via `.jac/skills/`) and globally after running `./setup`:
+
+| Command | What it does |
+|---|---|
+| `/jobhunter` | Run the full pipeline: download → match → report → dashboard |
+| `/classify-jobs` | Classify scored jobs into APPLY NOW / THIS WEEK / STRETCH / SKIP buckets |
+| `/tailor-resume` | Look up a job by ID and generate a tailored HTML/PDF resume |
+
+**Install globally** (enables these commands in any Claude Code project):
+```bash
+git clone https://github.com/adityamujumdar/job-finder.git ~/projects/job-finder
+cd ~/projects/job-finder && ./setup
+```
+
 ## Known Gotchas
 
 - Lever APIs are flaky (Netflix times out at 30s) — has retry with 60s timeout

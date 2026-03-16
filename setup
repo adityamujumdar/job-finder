@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# JobHunter AI — setup
+# Run this once after cloning to register skills with Claude Code globally.
+#
+# Usage:
+#   git clone https://github.com/adityamujumdar/job-finder.git ~/projects/job-finder
+#   cd ~/projects/job-finder && ./setup
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLAUDE_DIR="$HOME/.claude"
+SKILLS_DIR="$CLAUDE_DIR/skills"
+CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
+
+# ── colours ────────────────────────────────────────────────────────────────────
+GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; NC='\033[0m'
+ok()   { echo -e "${GREEN}✅ $*${NC}"; }
+warn() { echo -e "${YELLOW}⚠️  $*${NC}"; }
+err()  { echo -e "${RED}❌ $*${NC}"; exit 1; }
+step() { echo -e "\n${GREEN}▶ $*${NC}"; }
+
+echo ""
+echo "🎯 JobHunter AI — Setup"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ── 1. Python check ─────────────────────────────────────────────────────────────
+step "Checking Python..."
+PYTHON=""
+for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+  if command -v "$candidate" &>/dev/null; then
+    ver=$("$candidate" -c 'import sys; print(sys.version_info[:2])')
+    if "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+      PYTHON="$candidate"
+      ok "Found $candidate ($ver)"
+      break
+    fi
+  fi
+done
+[ -z "$PYTHON" ] && err "Python 3.10+ required. Install from python.org or via homebrew: brew install python@3.13"
+
+# ── 2. Python environment ───────────────────────────────────────────────────────
+step "Setting up Python environment..."
+if [ ! -d "$SCRIPT_DIR/.venv" ]; then
+  $PYTHON -m venv "$SCRIPT_DIR/.venv"
+  ok "Created .venv"
+fi
+source "$SCRIPT_DIR/.venv/bin/activate"
+pip install -q -r "$SCRIPT_DIR/requirements.txt"
+ok "Dependencies installed"
+
+# ── 3. Personal config files ─────────────────────────────────────────────────────
+step "Setting up personal config..."
+if [ ! -f "$SCRIPT_DIR/config/profile.yaml" ]; then
+  cp "$SCRIPT_DIR/config/profile.yaml.example" "$SCRIPT_DIR/config/profile.yaml"
+  warn "config/profile.yaml created from example — edit it with your target roles, skills, and location"
+else
+  ok "config/profile.yaml already exists"
+fi
+
+if [ ! -f "$SCRIPT_DIR/RESUME.md" ]; then
+  cp "$SCRIPT_DIR/RESUME.md.example" "$SCRIPT_DIR/RESUME.md"
+  warn "RESUME.md created from example — edit it with your work experience (it's gitignored)"
+else
+  ok "RESUME.md already exists"
+fi
+
+# ── 4. Register skills with Claude Code ──────────────────────────────────────────
+step "Registering skills with Claude Code..."
+mkdir -p "$SKILLS_DIR"
+
+# Create symlinks for each skill so /jobhunter, /classify-jobs, /tailor-resume work globally
+SKILLS=("jobhunter" "classify-jobs" "tailor-resume")
+for skill in "${SKILLS[@]}"; do
+  target="$SKILLS_DIR/$skill"
+  source_dir="$SCRIPT_DIR/$skill"
+  if [ ! -d "$source_dir" ]; then
+    warn "Skill directory not found: $source_dir — skipping $skill"
+    continue
+  fi
+  # Overwrite existing symlink; skip if a real directory already exists (user's own skill)
+  if [ -L "$target" ] || [ ! -e "$target" ]; then
+    ln -snf "$source_dir" "$target"
+    ok "/$skill → $source_dir"
+  else
+    warn "/$skill already exists at $target (not a symlink) — skipping to avoid overwrite"
+  fi
+done
+
+# ── 5. Update ~/.claude/CLAUDE.md ────────────────────────────────────────────────
+step "Updating ~/.claude/CLAUDE.md..."
+touch "$CLAUDE_MD"
+
+if grep -q "## job-finder" "$CLAUDE_MD" 2>/dev/null; then
+  ok "job-finder section already in CLAUDE.md — skipping (run 'setup --force' to re-add)"
+else
+  cat >> "$CLAUDE_MD" << EOF
+
+## job-finder
+AI-powered job hunting with Claude. Load the relevant skill when the user wants to
+find jobs, classify matches, or build a tailored resume.
+
+Project directory: $SCRIPT_DIR
+
+Available skills:
+- \`/jobhunter\` — full pipeline: download 502K+ jobs → score → ranked dashboard
+- \`/classify-jobs\` — classify P1/P2 matches: APPLY NOW / THIS WEEK / STRETCH / SKIP
+- \`/tailor-resume\` — build a tailored HTML resume for a specific job (by ID or description)
+
+Trigger words (even without slash): "find me jobs", "job search", "classify my P1 jobs",
+"build resume for job #", "tailor my resume for [company]", "which jobs should I apply to"
+EOF
+  ok "Added job-finder section to $CLAUDE_MD"
+fi
+
+# ── 6. Force flag: re-add CLAUDE.md section ──────────────────────────────────────
+if [ "${1}" = "--force" ] && grep -q "## job-finder" "$CLAUDE_MD" 2>/dev/null; then
+  # Remove old section and re-add (portable sed for macOS + Linux)
+  python3 -c "
+import re, pathlib
+p = pathlib.Path('$CLAUDE_MD')
+content = p.read_text()
+# Remove existing job-finder section (from ## job-finder to next ## or end)
+content = re.sub(r'\n## job-finder\n.*?(?=\n## |\Z)', '', content, flags=re.DOTALL)
+p.write_text(content)
+"
+  # Re-run without --force to add fresh section
+  "$0"
+  exit 0
+fi
+
+# ── Done ─────────────────────────────────────────────────────────────────────────
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${GREEN}✅ JobHunter AI is ready!${NC}"
+echo ""
+echo "  Next steps:"
+echo ""
+echo "  1. Edit your profile:  $SCRIPT_DIR/config/profile.yaml"
+echo "     (set your target roles, skills, location, preferred companies)"
+echo ""
+echo "  2. Add your resume:    $SCRIPT_DIR/RESUME.md"
+echo "     (fill in your work experience — it's gitignored)"
+echo ""
+echo "  3. Run the pipeline:"
+echo "     cd $SCRIPT_DIR"
+echo "     source .venv/bin/activate"
+echo "     python -m src.scraper && python -m src.matcher && python -m src.site_generator"
+echo "     open site/index.html"
+echo ""
+echo "  4. Talk to Claude (in any Claude Code session):"
+echo "     /jobhunter        → find and score jobs"
+echo "     /classify-jobs    → rank matches: APPLY NOW / THIS WEEK / SKIP"
+echo "     /tailor-resume    → build a tailored HTML resume for a specific job"
+echo ""
+echo "  📖 Full docs: $SCRIPT_DIR/README.md"
+echo ""

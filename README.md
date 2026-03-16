@@ -73,6 +73,21 @@ You + Claude (on demand)
 
 ## Setup
 
+### Quick Install (recommended)
+
+Run one command to clone the repo, install the Python pipeline, **and** register `/jobhunter`, `/classify-jobs`, and `/tailor-resume` as Claude slash commands:
+
+```bash
+git clone https://github.com/adityamujumdar/job-finder.git ~/projects/job-finder
+cd ~/projects/job-finder && ./setup
+```
+
+Then open Claude Code in any project and type `/jobhunter` to start.
+
+---
+
+### Manual Setup
+
 ### 1. Fork & Clone
 
 ```bash
