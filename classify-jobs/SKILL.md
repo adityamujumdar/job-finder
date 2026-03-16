@@ -1,6 +1,6 @@
 ---
 name: classify-jobs
-version: 1.0.0
+version: 2.0.0
 description: |
   Classify scored job matches into APPLY NOW / APPLY THIS WEEK / STRETCH / SKIP
   using Claude as the LLM. Reads today's scored data and your profile, then ranks
@@ -9,90 +9,226 @@ description: |
 
 # JobHunter AI — Classify Jobs
 
+## Philosophy
+
+Classify means **DO IT**. Don't summarize the buckets, don't explain the process —
+classify the jobs and show the output. Only stop if there's no scored data to work with.
+
+Read the FULL list before classifying anything. Skimming leads to false positives in
+APPLY NOW and missed gems in P2. Every classification must be anchored in specific data —
+title alignment, years of experience match, named skills — not vibes.
+
+Borrowed from [gstack/retro](https://github.com/garrytan/gstack): anchor praise in
+actual commits, frame growth suggestions as investment advice. Applied here: anchor every
+classification in the actual job data, and frame SKIP/STRETCH decisions as information
+not rejection. Borrowed from [gstack/review](https://github.com/garrytan/gstack):
+read the full diff before commenting — read every job before bucketing any of them.
+
+---
+
+## Only stop for:
+- No scored data exists for today (run `/jobhunter` first)
+- `config/profile.yaml` is missing
+
+## Never stop for:
+- Low P1 count (classify what's there, even if it's just 2 jobs)
+- Jobs you've already classified (re-classify if asked — the user asked)
+- Asking permission to move on to the next job
+
+---
+
 ## Trigger
 "classify jobs", "classify my P1 jobs", "rank these jobs", "which jobs should I apply to",
 "which of these should I apply to first", "/classify-jobs"
 
-## First-Time Setup Check
+---
+
+## Step 0 — Prerequisite Check
+
 ```bash
-[ -f "config/profile.yaml" ] || echo "❌ Missing profile — run: cp config/profile.yaml.example config/profile.yaml"
-python3 -c "import json; jobs=json.load(open('data/scored/$(date +%Y-%m-%d).json')); print(f'✅ {len(jobs)} jobs loaded')" 2>/dev/null \
-  || echo "❌ No scored data — run /jobhunter first to generate today's jobs"
+[ -f "config/profile.yaml" ] || echo "❌ Missing profile — run /jobhunter first"
+python3 -c "
+import json, pathlib
+today = __import__('datetime').date.today().isoformat()
+path = pathlib.Path(f'data/scored/{today}.json')
+if path.exists():
+    jobs = json.loads(path.read_text())
+    p1 = sum(1 for j in jobs if j.get('_priority') == 'P1')
+    p2 = sum(1 for j in jobs if j.get('_priority') == 'P2')
+    print(f'✅ {len(jobs)} jobs loaded — {p1} P1, {p2} P2')
+else:
+    print(f'❌ No scored data for {today} — run /jobhunter first')
+" 2>/dev/null
 ```
 
 ---
 
 ## Step 1 — Load Candidates
 
+Load P1 jobs. If fewer than 5 P1 jobs, also include the top P2 jobs (up to 30 total):
+
 ```bash
 python3 -c "
-import json
-jobs = json.load(open('data/scored/$(date +%Y-%m-%d).json'))
+import json, pathlib
+today = __import__('datetime').date.today().isoformat()
+jobs = json.loads(pathlib.Path(f'data/scored/{today}.json').read_text())
 p1 = [j for j in jobs if j.get('_priority') == 'P1']
-candidates = p1 if p1 else [j for j in jobs if j.get('_priority') == 'P2']
-tier = 'P1' if p1 else 'P2 (no P1 today)'
+p2 = [j for j in jobs if j.get('_priority') == 'P2']
+candidates = p1 if len(p1) >= 5 else (p1 + p2[:30 - len(p1)])
+tier = 'P1' if len(p1) >= 5 else f'P1 + top P2 (only {len(p1)} P1 today)'
 print(f'Classifying {len(candidates)} {tier} jobs')
-print(json.dumps(candidates[:25], indent=2))
+print(json.dumps(candidates[:30], indent=2))
 "
 ```
+
+---
 
 ## Step 2 — Read Profile
 
 ```bash
 cat config/profile.yaml
-# Note: target_roles, skills, target_level, years_experience, location
 ```
 
-## Step 3 — Classify Each Job
+Note: `target_roles`, `skills`, `target_level`, `years_experience`, `location`, `preferred_companies`.
+These are the facts your classifications must be anchored in.
 
-For each candidate, read the title, company, and description, then assign:
+---
+
+## Step 3 — Read ALL Jobs Before Classifying Any
+
+Before assigning any bucket, read every job in the list. You are looking for:
+- Which titles are exact matches vs partial matches vs false positives
+- Which companies are real product companies vs staffing farms
+- Which required skills you have vs gaps
+- Level alignment (title says "Senior" — does the JD confirm it?)
+
+**NEVER classify the first job until you've read the last job.**
+This prevents APPLY NOW inflation and catches the real gems buried in the list.
+
+---
+
+## Step 4 — Classify Each Job
+
+For each job, read title + company + description (if available), then assign a bucket.
+Every classification must include a one-line reason anchored in actual data.
+
+### Bucket Definitions
 
 | Bucket | Criteria |
 |--------|----------|
-| **🎯 APPLY NOW** | Title ✅ + core skills ✅ + level ✅ + real tech company ✅ |
-| **📅 APPLY THIS WEEK** | Good match, one minor gap (missing 1 skill, slight level mismatch) |
-| **⚡ STRETCH** | Interesting but meaningfully underqualified — apply if excited |
-| **⏭️ SKIP** | False positive: wrong function, staffing firm, or wrong seniority |
+| **🎯 APPLY NOW** | Title ✅ + core skills ✅ + level ✅ + real product company ✅. No meaningful gaps. |
+| **📅 APPLY THIS WEEK** | Strong match with exactly one manageable gap (1 missing skill, slight level mismatch). |
+| **⚡ STRETCH** | Interesting but meaningfully underqualified. Apply only if excited — a reach, not a waste. |
+| **⏭️ SKIP** | Wrong function, staffing firm, expired listing, or score is a false positive. |
 
-**SKIP signals:** "data center" in description, SWE/DevOps role mislabeled as data, staffing/consulting agency, requires 10+ years when you have fewer.
+### Anchor rules (from gstack/retro: "anchor praise in actual commits")
 
-## Step 4 — Output
+- ✅ "Scores 97.9 — your SQL + Tableau background matches their required tools exactly" → valid
+- ✅ "SKIP — title says 'Data Engineer' but description is Kubernetes + SRE, wrong function" → valid
+- ❌ "Strong match" → too vague, must anchor in a specific data point
+- ❌ "Good company, worth applying" → no data, not a classification
+
+### APPLY NOW gate (must pass ALL four):
+1. Title is genuinely in `target_roles` (phrase-level, not token-bag)
+2. At least 2 of your top 3 skills appear in the JD
+3. Level is within one step of `target_level`
+4. Company is a real product company (not recruiter, not staffing, not "data center")
+
+### SKIP signals — DO NOT flag as APPLY NOW:
+- "data center", "infrastructure", "SRE", "DevOps" in description for a data/analytics role
+- Company name contains "Solutions", "Staffing", "Resources", "Consulting", "Global HR"
+- Job posted by a third-party recruiter, not the company itself
+- Requires 10+ years when you have significantly fewer (not a stretch, a mismatch)
+- Title says one thing, description says another (keyword stuffing / false positive)
+- Remote listing but buried note says "must be onsite 5 days" — misrepresented role
+
+### Suppressions — DO NOT flag these (from gstack/review philosophy):
+- STRETCH for 1-2 skill gaps that are learnable on the job (learnable ≠ disqualifying)
+- APPLY THIS WEEK for companies you're not excited about (still valuable signal)
+- SKIP for reach roles — frame as information, not rejection
+
+---
+
+## Step 5 — Output
+
+Lead with the headline count, then the classified list:
 
 ```
-🎯 APPLY NOW (today):
-  #a3f9c1d2 — Netflix Analytics Engineer (97.9) — SQL + Tableau, exact level match
-  #b2c1d3e4 — Anthropic Data Analyst (92.8) — Python + BI stack, mission-driven
+🎯 APPLY NOW (tonight):
+  #a3f9c1d2  Netflix Analytics Engineer        Remote   97.9  — SQL + Tableau, exact level match
+  #b2c1d3e4  Anthropic Data Analyst            SF       92.8  — Python + BI, mission-driven company
 
 📅 APPLY THIS WEEK:
-  #c4d5e6f7 — Stripe BI Analyst (85.2) — Strong fit, missing dbt (learnable)
+  #c4d5e6f7  Stripe BI Analyst                 Remote   85.2  — Strong fit; dbt gap (learnable)
+  #d6e7f8a9  Linear Data Engineer              Remote   83.1  — Solid match; uses Go (you know Python)
 
-⚡ STRETCH:
-  #d6e7f8a9 — OpenAI Research Analyst (78.1) — Heavy ML context, worth trying
+⚡ STRETCH (apply if excited):
+  #e8f9a0b1  OpenAI Research Analyst           SF       78.1  — Heavy ML context; worth trying if mission resonates
 
 ⏭️ SKIP:
-  #e8f9a0b1 — Acme Corp Data Infrastructure (false positive — SWE infra role)
+  #f1a2b3c4  Acme Corp Data Infrastructure     Remote   74.6  — SRE/Kubernetes, wrong function
+  #a5b6c7d8  TechStaffing Data Lead            Remote   72.0  — Recruiter posting, not a real company
 ```
 
-Note: Job IDs are 8-char hex (0-9, a-f). Copy any ID to use with `/tailor-resume`.
+Then write 2-3 sentences of honest analysis (not cheerleading):
+- Which buckets are well-populated vs thin
+- One honest observation: "Most P1s are at fintech companies — if you haven't researched the sector, worth 30 min before applying"
+- One leveling-up note if there's a pattern in the gaps: "dbt shows up in 4 of your APPLY THIS WEEK gaps — a weekend project would clear that signal"
+  Frame gaps as investment, not criticism (from gstack/retro philosophy).
 
-## After Classification
+---
 
-Offer to build a tailored resume for any APPLY NOW job:
-> "Want me to build a resume for job #a3f9c1d2?"
-→ Use `/tailor-resume` with that ID.
+## Step 6 — Save Classification History
+
+Save results to `.context/classification-history.json` (append, don't overwrite):
+
+```json
+{
+  "date": "2026-03-16",
+  "apply_now": [{"id": "a3f9c1d2", "title": "...", "company": "..."}],
+  "apply_this_week": [...],
+  "stretch": [...],
+  "skip": [...],
+  "common_skill_gap": "dbt",
+  "total_classified": 12
+}
+```
+
+If history exists: show one-line trend:
+```
+  vs last run (Mar 14): APPLY NOW 2→5 (↑3), common gap: dbt (consistent)
+```
+
+---
+
+## Step 7 — Offer Next Action
+
+After showing results, offer exactly one next step — the most valuable one given the output:
+
+```
+Want me to build a tailored resume for job #a3f9c1d2 (Netflix)?
+→ Say "build resume for #a3f9c1d2" or use /tailor-resume
+```
+
+**One offer. Not a menu of 5 options.** (from gstack/ship: non-interactive by default)
+
+---
 
 ## Looking Up a Job by ID
 
 ```bash
 python3 -c "
-import json, hashlib
-jobs = json.load(open('data/scored/$(date +%Y-%m-%d).json'))
+import json, hashlib, pathlib
+today = __import__('datetime').date.today().isoformat()
+jobs = json.loads(pathlib.Path(f'data/scored/{today}.json').read_text())
 jid = 'a3f9c1d2'  # replace with actual ID
 match = next((j for j in jobs if hashlib.sha256(j.get('url','').encode()).hexdigest()[:8] == jid), None)
 if match:
     print(f\"{match['title']} @ {match['company']}\")
     print(f\"URL: {match.get('url','')}\")
+    print(f\"Score: {match.get('_score', 0):.1f}  Priority: {match.get('_priority','?')}\")
 else:
     print('Job not found — may be from a different date')
+    print('Check: ls data/scored/ for available dates')
 "
 ```
