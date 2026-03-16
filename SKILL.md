@@ -5,7 +5,8 @@ User says any of: "find me jobs", "job search", "find jobs", "run jobhunter", "d
 
 ## Setup (first time only)
 ```bash
-cd /Users/adityamujumdar/projects/job-finder
+# Use the project root — adjust path if needed
+cd ~/projects/job-finder   # or wherever the repo lives
 source .venv/bin/activate
 ```
 
@@ -174,7 +175,10 @@ python3 -c "
 import json
 jobs = json.load(open('data/scored/$(date +%Y-%m-%d).json'))
 p1 = [j for j in jobs if j.get('_priority') == 'P1']
-print(json.dumps(p1[:20], indent=2))
+# Fall back to P2 if no P1 jobs
+candidates = p1 if p1 else [j for j in jobs if j.get('_priority') == 'P2']
+print(f'Classifying {len(candidates)} jobs (priority: {\"P1\" if p1 else \"P2 fallback\"})')
+print(json.dumps(candidates[:20], indent=2))
 "
 ```
 
@@ -184,12 +188,16 @@ print(json.dumps(p1[:20], indent=2))
    - **SKIP** — Wrong function (e.g., BI title but actually a software engineering role)
    - **STRETCH** — Interesting but you're underqualified; apply anyway if interested
 
-3. **Classification criteria against Aditya's profile:**
-   - Core match: title contains BI/analytics/data analyst keywords ✅
-   - Skills match: SQL, Python, Tableau/Looker/Power BI mentioned ✅
-   - Level match: 3-7 years experience, senior/mid-level (not director/VP) ✅
-   - Company type: tech company, not staffing/consulting ✅
-   - Wrong: "data center", "data infrastructure SWE", "marketing analyst" with no BI tools
+3. **Classification criteria — read from profile first:**
+   ```bash
+   cat config/profile.yaml  # Check target_roles, skills, skill_level, preferred_companies
+   ```
+   Then apply these rules:
+   - Core match: title matches user's target_roles (BI/analytics/data analyst keywords) ✅
+   - Skills match: job description mentions skills from profile.yaml skills list ✅
+   - Level match: job level matches user's skill_level (mid/senior, not director/VP, not intern) ✅
+   - Company type: tech company preferred, not staffing/consulting ✅
+   - SKIP signals: "data center", "data infrastructure SWE", "marketing analyst" with no BI tools
 
 4. **Output format:**
 ```
@@ -201,11 +209,12 @@ print(json.dumps(p1[:20], indent=2))
   #c4d5e6f7 — Stripe BI Analyst (score: 85.2) — Good fit, missing dbt experience
 
 ⚡ STRETCH (apply if excited):
-  #d6e7f8g9 — OpenAI Research Analyst (score: 78.1) — Heavy ML context, worth trying
+  #d6e7f8a9 — OpenAI Research Analyst (score: 78.1) — Heavy ML context, worth trying
 
 ⏭️ SKIP:
-  #e8f9g0h1 — Acme Data Infrastructure Engineer (false positive, SWE role)
+  #e8f9a0b1 — Acme Data Infrastructure Engineer (false positive, SWE role)
 ```
+Note: Job IDs are 8 hex characters (0-9, a-f only).
 
 5. **After classification:** Offer to build resume for any APPLY NOW job by its ID.
 
@@ -224,10 +233,10 @@ When user says "I want to apply to [job]", "tailor my resume for [job]", or "bui
    $B text
    ```
 
-2. **Read the user's current resume (as plain text reference):**
+2. **Read the user's current resume:**
    ```bash
-   cat aditya_resume.tex
-   # Extract the key sections: experience bullets, skills, education
+   cat RESUME.md   # Clean Markdown version — use this for tailoring
+   # aditya_resume.tex is the LaTeX print version; RESUME.md is the source of truth for Claude
    ```
 
 3. **Tailor the resume:**
@@ -290,78 +299,103 @@ When user says "I want to apply to [job]", "tailor my resume for [job]", or "bui
 Netflix is in our JBA pipeline (Workday slug: `netflix|wd1|netflix`) AND on LinkedIn.
 Use Netflix as the ground-truth test to verify LinkedIn scraping is working:
 1. Scrape Netflix jobs from LinkedIn (see below)
-2. Compare against jobs already in our pipeline: `grep -i netflix data/scored/$(date +%Y-%m-%d).json | head -5`
+2. Compare against jobs already in our pipeline:
+   ```bash
+   python3 -c "
+   import json
+   jobs = json.load(open('data/scored/$(date +%Y-%m-%d).json'))
+   netflix = [j for j in jobs if 'netflix' in j.get('company','').lower()]
+   print(f'Netflix jobs in pipeline: {len(netflix)}')
+   for j in netflix[:5]:
+       print(f'  {j[\"title\"]} — {j[\"location\"]} — score: {j[\"_score\"]:.1f}')
+   "
+   ```
 3. If LinkedIn finds jobs not in JBA → LinkedIn integration is adding value ✅
 4. If LinkedIn finds the same jobs → JBA coverage is already good ✅ (no new data, but connection cross-ref still works)
 
+### ⚠️ Prerequisite: Verify G-Stack is Available
+```bash
+# Step 1: Find the browse binary
+BROWSE_BIN=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null || echo "")
+if [ -z "$BROWSE_BIN" ]; then
+  echo "ERROR: G-Stack browse not found. Cannot use LinkedIn integration."
+  echo "Install G-Stack or ask user to set up the browse tool."
+  exit 1
+fi
+B=$(echo "$BROWSE_BIN" | head -1)
+echo "G-Stack found: $B"
+```
+
+**If the guard fails:** Tell the user "LinkedIn scraping requires G-Stack browse to be installed. This section is not available without it."
+
 ### Setup: Import Brave Cookies
 ```bash
-BROWSE_OUTPUT=$(browse/bin/find-browse 2>/dev/null || ~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
-B=$(echo "$BROWSE_OUTPUT" | head -1)
-
-# Import cookies from Brave browser (user must quit Brave first on macOS)
+# User must quit Brave first on macOS before importing cookies
 $B cookie-import-browser brave
 
-# Verify LinkedIn login
+# Verify LinkedIn login — should show the feed, not a login page
 $B goto https://www.linkedin.com/feed
 $B snapshot
-# Should show the feed, not login page
+# If you see a login page, re-import cookies with Brave fully closed
 ```
 
 ### Search LinkedIn Jobs
 ```bash
-# Build search URL from profile
-# Keywords from target_roles, location from profile, f_WT=2 for remote
+# Build search URL from profile keywords (f_WT=2 = remote filter)
 $B goto "https://www.linkedin.com/jobs/search/?keywords=business+intelligence+analyst&location=United+States&f_WT=2"
 $B snapshot
 
-# Extract job cards
+# Extract job cards text
 $B text ".jobs-search__results-list"
 
-# Get individual job details
-$B click @eN  # click on a job card
+# To view a specific job: look at the snapshot output, find the element reference
+# for the job card you want (e.g. @e5, @e12), then click it:
+# $B click @e5   ← use the actual element ref from YOUR snapshot, not @eN
 $B text ".jobs-description"
 ```
 
+**Important:** Element references (`@e1`, `@e5`, etc.) are assigned dynamically per page load.
+After each `$B snapshot`, identify the correct `@eN` reference from the output before clicking.
+Never use `@eN` literally — always replace N with the actual number from your snapshot.
+
 ### Cross-Reference Connections
 ```bash
-# On a company page
+# On a company's people page — shows your connections at that company
 $B goto "https://www.linkedin.com/company/anthropic/people/"
 $B text
-# Extract connection names for "You know X at this company" badges
+# Look for names with "1st" or "2nd" degree connection indicators
+# Extract these for "You know X at this company" context
 ```
 
 ---
 
 ## 🤖 Local LLM Scoring (DeepSeek on GPU)
 
-When the user wants higher-quality scoring (or says "use LLM", "deep score", "classify jobs"):
+> ⚠️ **STATUS: NOT YET BUILT** — `src/llm_scorer.py` does not exist yet.
+> Do NOT attempt to run `python -m src.llm_scorer` — it will fail with `ModuleNotFoundError`.
+> Use the **Candidate Classification Per Position** section above instead (Claude does the classification directly).
+> This section documents the intended design for when llm_scorer.py is implemented.
 
-### Check if LLM is available
+When the user wants higher-quality automated scoring (or says "use LLM", "deep score"):
+
+### Check if LLM is available (future use)
 ```bash
 curl -s http://localhost:11434/api/tags 2>/dev/null | head -5
 # If Ollama is running, this returns available models
 # If not running, tell user: "Start Ollama with: ollama serve"
 ```
 
-### Run LLM classification
+### Intended design (once src/llm_scorer.py is built)
 ```bash
-python -m src.llm_scorer
-# Reads data/scored/YYYY-MM-DD.json (rule-based results)
-# Sends top ~5K candidates to local DeepSeek in batches
-# Saves to data/llm_scored/YYYY-MM-DD.json
-# Merges LLM scores with rule-based scores
-# ~20-40 min on 12GB GPU
+# python -m src.llm_scorer  ← DO NOT RUN YET — module not implemented
+# Will read data/scored/YYYY-MM-DD.json (rule-based results)
+# Will send top ~5K candidates to local DeepSeek in batches
+# Will save to data/llm_scored/YYYY-MM-DD.json
+# Estimated: ~20-40 min on 12GB GPU
 ```
 
-### After LLM scoring
-```bash
-python -m src.site_generator  # Regenerate dashboard with LLM insights
-```
-
-The dashboard will show LLM reasoning per job if available (e.g., "Strong BI match — SQL and Tableau mentioned").
-
-**Note:** LLM scoring is OPTIONAL. Rule-based scoring already has zero false positives in P1. LLM improves borderline P2/P3 classification.
+**Note:** LLM scoring is OPTIONAL. Rule-based scoring already has zero false positives in P1.
+Claude's own "Candidate Classification Per Position" (above) covers this use case until llm_scorer.py is built.
 
 ---
 
@@ -392,4 +426,4 @@ python -m src.site_generator
 - Low P1 count → Suggest broadening target_roles in profile.yaml  
 - Scrape failures → Check internet connection, specific ATS may be down
 - LinkedIn blocked → Re-import cookies: `$B cookie-import-browser brave`
-- Resume tailoring → Needs aditya_resume.tex in project root
+- Resume tailoring → Needs RESUME.md in project root (run `cat RESUME.md` to verify it exists)
