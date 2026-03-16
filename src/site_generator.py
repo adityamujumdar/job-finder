@@ -185,19 +185,32 @@ tailwind.config = {{
           <span id="darkIcon">🌙</span>
         </button>
         <a href="https://github.com/adityamujumdar/job-finder" target="_blank"
-           class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">GitHub ↗</a>
+           class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Fork this repo to run it for your own job search">⭐ Fork on GitHub</a>
       </div>
     </div>
   </div>
 </header>
 
+<!-- Demo Banner -->
+<div class="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800">
+  <div class="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-4 text-sm">
+    <span class="text-blue-700 dark:text-blue-300">
+      👋 <strong>This is a sample dashboard</strong> — jobs shown are matched to a real profile.
+      Fork the repo and set it up with your own profile to see <em>your</em> matches.
+    </span>
+    <a href="https://github.com/adityamujumdar/job-finder#get-started-in-3-steps-10-minutes"
+       target="_blank"
+       class="shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">Set it up → </a>
+  </div>
+</div>
+
 <!-- Stats Bar -->
 <div class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
   <div class="max-w-7xl mx-auto px-4 py-2">
     <div class="flex flex-wrap gap-3 items-center">
-      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">P1: {p1}</span>
-      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300">P2: {p2}</span>
-      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300">P3: {p3}</span>
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300" title="P1: Apply today — strong match (score 85–100)">🔴 P1 <span class="font-normal ml-1 hidden sm:inline">apply today</span> · {p1}</span>
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300" title="P2: Apply this week — good match (score 70–84)">🟠 P2 <span class="font-normal ml-1 hidden sm:inline">this week</span> · {p2}</span>
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300" title="P3: Apply if you have time — decent match (score 50–69)">🟡 P3 <span class="font-normal ml-1 hidden sm:inline">if time</span> · {p3}</span>
       {f'<span class="text-green-600 dark:text-green-400 text-xs font-medium">{new_count} new ⭐</span>' if new_count else ''}
       <span id="count" class="text-xs text-gray-500 dark:text-gray-400 ml-auto"></span>
     </div>
@@ -218,9 +231,9 @@ tailwind.config = {{
         </svg>
       </div>
       <div class="flex gap-1">
-        <button onclick="togglePriority('P1')" id="btn-P1" class="filter-chip px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 border-2 border-red-300 dark:border-red-700">P1</button>
-        <button onclick="togglePriority('P2')" id="btn-P2" class="filter-chip px-3 py-1.5 rounded-lg text-xs font-bold bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 border-2 border-orange-300 dark:border-orange-700">P2</button>
-        <button onclick="togglePriority('P3')" id="btn-P3" class="filter-chip px-3 py-1.5 rounded-lg text-xs font-bold bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-2 border-yellow-300 dark:border-yellow-700">P3</button>
+        <button onclick="togglePriority('P1')" id="btn-P1" class="filter-chip px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 border-2 border-red-300 dark:border-red-700" title="P1: Apply today — your strongest matches">🔴 P1 <span class="font-normal hidden sm:inline">today</span></button>
+        <button onclick="togglePriority('P2')" id="btn-P2" class="filter-chip px-3 py-1.5 rounded-lg text-xs font-bold bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 border-2 border-orange-300 dark:border-orange-700" title="P2: Apply this week — good matches">🟠 P2 <span class="font-normal hidden sm:inline">this week</span></button>
+        <button onclick="togglePriority('P3')" id="btn-P3" class="filter-chip px-3 py-1.5 rounded-lg text-xs font-bold bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-2 border-yellow-300 dark:border-yellow-700" title="P3: Apply if you have time — decent matches">🟡 P3 <span class="font-normal hidden sm:inline">if time</span></button>
       </div>
       <button onclick="toggleNew()" id="btn-new" class="filter-chip px-3 py-1.5 rounded-lg text-xs font-medium border-2 border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300">⭐ New</button>
       <select id="sort" onchange="filterJobs()" class="px-3 py-1.5 rounded-lg text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
@@ -296,6 +309,15 @@ tailwind.config = {{
         Clear all filters
       </button>
     </div>
+  </div>
+</div>
+
+<!-- Claude Tip -->
+<div class="max-w-7xl mx-auto px-4 pt-3">
+  <div class="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg px-4 py-2 text-xs text-purple-700 dark:text-purple-300 flex items-center gap-2">
+    <span>🤖</span>
+    <span><strong>Using Claude Code?</strong> Each card has a Job ID (e.g. <code class="font-mono bg-purple-100 dark:bg-purple-900/40 px-1 rounded">#a3f9c1d2</code>).
+    Tell Claude: <em>"build a resume for job #a3f9c1d2"</em> or <em>"classify my P1 jobs"</em> using <code class="font-mono bg-purple-100 dark:bg-purple-900/40 px-1 rounded">/classify-jobs</code></span>
   </div>
 </div>
 

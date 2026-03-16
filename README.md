@@ -1,163 +1,341 @@
 # 🎯 JobHunter AI
 
-**Automated job discovery across 502K+ jobs from 12,000+ companies — scored, ranked, and delivered as a beautiful dashboard. Powered by Claude.**
+**Stop scrolling job boards. Tell Claude what you're looking for — it searches 502,000+ jobs, scores every match, and gets your resume ready to send.**
 
-[**→ Live Dashboard**](https://adityamujumdar.github.io/job-finder) · [Report Bug](https://github.com/adityamujumdar/job-finder/issues)
+> 🤖 **You'll need [Claude Code](https://claude.ai/code)** — it's the AI assistant that runs everything here. Free with a Claude account. [Get it →](https://claude.ai/code)
 
----
-
-## What It Does
-
-JobHunter AI downloads 502K+ job listings daily from 12,000+ companies across Greenhouse, Lever, Workday, Ashby, and BambooHR. It scores each job against your profile (target roles, location, skills, preferred companies) and publishes a prioritized dashboard to GitHub Pages.
-
-**Then Claude becomes your personal recruiter** — classifying which jobs to apply to, tailoring your resume per position, and generating a beautiful HTML/PDF resume in seconds.
-
-**No server. No cost. Fully automated.**
-
-### Features
-
-- 🔍 **502K+ jobs** from 12K+ companies, refreshed daily
-- 📊 **Smart scoring** — title match, location, level, keywords, company preference, recency
-- 🏷️ **Priority tiers** — P1 (apply now), P2 (this week), P3 (if time)
-- 🔢 **Unique job IDs** — reference any job as `#a3f9c1d2` when talking to Claude
-- ⭐ **"New Today"** badges — instantly see what's fresh
-- 🔎 **Search & filter** — by title, company, location, ATS platform, priority
-- 🌙 **Dark mode** — easy on the eyes
-- 📱 **Mobile responsive** — job hunt from anywhere
-- 🤖 **GitHub Actions** — runs daily, zero maintenance
-- 🧠 **Claude intelligence** — classify, tailor resumes, analyze jobs conversationally
+[**→ See a Live Dashboard Example**](https://adityamujumdar.github.io/job-finder)
 
 ---
 
-## How It Works
+## What You'll Get
+
+Every time you run it, JobHunter searches over **half a million job listings** from 12,000+ companies, scores each one against your background, and shows you a ranked dashboard:
 
 ```
-GitHub Actions (daily @ 8am UTC)
-  1. Download 502K jobs from job-board-aggregator    (~15 seconds)
-  2. Score each job against your profile              (~8 seconds)
-  3. Generate static HTML dashboard                   (~1 second)
-  4. Deploy to GitHub Pages                           (automatic)
-
-You + Claude (on demand)
-  5. "Classify my P1 jobs" → Claude ranks APPLY NOW / THIS WEEK / SKIP
-  6. "Build resume for job #a3f9c1d2" → Claude tailors your resume to that job
-  7. Beautiful HTML resume → Cmd+P → PDF in your browser
+🔴 P1 — Apply today      ← Your best matches. Strong fit. Do these first.
+🟠 P2 — Apply this week  ← Good matches. Worth your time.
+🟡 P3 — If you have time ← Decent match. Apply if you're being thorough.
 ```
 
-### Architecture
+Then Claude helps you act on the best ones:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  TIER 1: JBA Download (502K jobs, ~15s)                  │
-│  src/downloader.py → data/jba/YYYY-MM-DD.json           │
-├─────────────────────────────────────────────────────────┤
-│  TIER 2: Live Scrape (preferred companies, ~2-5 min)     │
-│  src/jba_fetcher.py → fresh data for target companies   │
-├─────────────────────────────────────────────────────────┤
-│  PIPELINE                                                │
-│  src/scraper.py  → merge + dedup + clean + prune        │
-│  src/matcher.py  → score + rank (P1/P2/P3)              │
-│  src/report.py   → CSV + terminal summary               │
-│  src/site_generator.py → static HTML dashboard          │
-├─────────────────────────────────────────────────────────┤
-│  CLAUDE INTELLIGENCE (SKILL.md)                          │
-│  • Classify jobs: APPLY NOW / THIS WEEK / STRETCH / SKIP│
-│  • Tailor resume per job (reads RESUME.md)               │
-│  • Generate HTML resume → Cmd+P → PDF                   │
-│  • LinkedIn scraping (via G-Stack, optional)            │
-│  • LLM upgrade path: Ollama/DeepSeek (optional)         │
-└─────────────────────────────────────────────────────────┘
+You    →  /classify-jobs
+Claude →  "You have 8 P1 jobs. Apply to Stripe first — your Python + distributed
+           systems background is exactly what they listed. Here's why each one
+           is or isn't worth your time..."
+
+You    →  "build a resume for job #a3f9c1d2"
+Claude →  [tailors your resume to that specific job, opens in browser]
+You    →  Cmd+P → PDF saved ✅
 ```
 
 ---
 
-## Setup
+## Before You Start
 
-### Quick Install (recommended)
+You need three things (all free):
 
-Run one command to clone the repo, install the Python pipeline, **and** register `/jobhunter`, `/classify-jobs`, and `/tailor-resume` as Claude slash commands:
-
-```bash
-git clone https://github.com/adityamujumdar/job-finder.git ~/projects/job-finder
-cd ~/projects/job-finder && ./setup
-```
-
-Then open Claude Code in any project and type `/jobhunter` to start.
+| | What | Why you need it | Get it |
+|---|---|---|---|
+| 🤖 | **Claude Code** | This is how you talk to JobHunter | [claude.ai/code](https://claude.ai/code) |
+| 🐙 | **GitHub account** | Where your dashboard gets hosted | [github.com](https://github.com) — 30 seconds to sign up |
+| 💻 | **Terminal** | To run the one install command | Mac: search "Terminal" in Spotlight. Windows: use WSL |
 
 ---
 
-### Manual Setup
+## Get Started in 3 Steps (~10 minutes)
 
-### 1. Fork & Clone
+### Step 1 — Install (2 minutes)
 
-```bash
-# Fork this repo on GitHub, then:
-git clone https://github.com/YOUR_USERNAME/job-finder.git
-cd job-finder
-python3.13 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Configure Your Profile
+Open your Terminal and paste this:
 
 ```bash
-cp config/profile.yaml.example config/profile.yaml
+git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder
+cd ~/job-finder && ./setup
 ```
 
-Edit `config/profile.yaml` with your details:
+The setup script automatically:
+- ✅ Installs Python dependencies
+- ✅ Registers `/jobhunter`, `/classify-jobs`, `/tailor-resume` as Claude commands
+- ✅ Creates starter config files for you
 
-```yaml
-name: "Your Name"
-location: "City, ST"           # Where you're based
-remote_ok: true
-willing_to_relocate: true
-relocation_cities:
-  - "San Francisco, CA"
-  - "New York, NY"
+---
 
-years_experience: 3            # Affects level matching
-target_level: "mid"            # intern / junior / mid / senior / lead / manager
+### Step 2 — Tell Claude What You're Looking For (5 minutes)
 
-target_roles:
-  - "Data Analyst"
-  - "Business Intelligence"
-  - "Analytics Engineer"
-
-skills:
-  - Python
-  - SQL
-  - Tableau
-  - Power BI
-
-boost_keywords:
-  - analytics
-  - reporting
-  - dashboard
-
-preferred_companies:
-  greenhouse:
-    - "anthropic"   # jobs.lever.co/anthropic → slug is "anthropic"
-    - "stripe"
-  workday:
-    - "netflix|wd1|netflix"    # format: slug|instance|site_name
-  ashby:
-    - "1password"
-```
-
-> **Finding company slugs:** Search the seed files: `grep -i "netflix" data/seed/workday.json`
-
-### 3. Set Up Your Resume (for Claude tailoring)
+Open Claude Code in a new terminal window:
 
 ```bash
-cp RESUME.md.example RESUME.md
+claude
 ```
 
-Edit `RESUME.md` with your actual work experience, skills, and education. This file is **gitignored** (safe to put personal details). Claude reads it when building tailored resumes for specific jobs.
+Then type this command:
 
-> **Note:** `RESUME.md` stays on your machine only — it's never committed to git.
+```
+/jobhunter
+```
 
-### 4. Run the Pipeline Locally
+Claude will ask you a few questions and configure everything for you:
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║  Claude Code — Terminal                                          ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  You: /jobhunter                                                 ║
+║                                                                  ║
+║  Claude: Hi! I'll help you find jobs. Let me set up your        ║
+║          profile first.                                          ║
+║                                                                  ║
+║          What kind of roles are you looking for?                 ║
+║          (e.g. "Software Engineer", "Product Manager",           ║
+║           "Data Analyst", "Marketing Manager")                   ║
+║                                                                  ║
+║  You: Software Engineer, Backend Engineer                        ║
+║                                                                  ║
+║  Claude: Where are you based? Open to remote or relocation?     ║
+║                                                                  ║
+║  You: Austin, TX — open to remote and SF                        ║
+║                                                                  ║
+║  Claude: How many years of experience do you have?              ║
+║                                                                  ║
+║  You: 4 years                                                    ║
+║                                                                  ║
+║  Claude: Any companies you'd love to work at?                   ║
+║                                                                  ║
+║  You: Stripe, Anthropic, Linear                                  ║
+║                                                                  ║
+║  Claude: ✅ Profile saved. Running the job search...            ║
+║          Downloading 502K jobs... done (15s)                     ║
+║          Scoring against your profile... done (8s)               ║
+║          Generating dashboard... done                            ║
+║                                                                  ║
+║          🎯 Found 23 P1 jobs — apply today!                     ║
+║             + 156 P2 matches worth applying this week            ║
+║             Dashboard → site/index.html                          ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+> **You don't need to edit any config files.** Claude handles that for you.
+
+---
+
+### Step 3 — See Your Jobs (instant)
+
+Claude opens (or tells you to open) `site/index.html` in your browser. Here's what you'll see:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  🎯 JobHunter AI                              [🌙 Dark mode]           │
+│  Software Engineer roles · 23 P1 · 156 P2 · 891 P3 · 48 new ⭐       │
+│  ─────────────────────────────────────────────────────────────────────│
+│  🔍 Search jobs, companies, locations...                               │
+│  [🔴 P1 — today] [🟠 P2 — this week] [🟡 P3 — if time] [⭐ New]      │
+│  ─────────────────────────────────────────────────────────────────────│
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │ 🔴 P1  93.2  NEW ⭐  greenhouse                                   │  │
+│  │ Senior Software Engineer                                          │  │
+│  │ Stripe  •  San Francisco, CA                         [Apply ↗]   │  │
+│  │ senior  •  posted 3 days ago  •  #a3f9c1d2 ◄─── Job ID          │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│       ↑                                  ↑                             │
+│  Red = strong match,             Use the ID to ask Claude:             │
+│  apply today                     "build a resume for job #a3f9c1d2"    │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │ 🔴 P1  91.7  NEW ⭐  greenhouse                                   │  │
+│  │ Backend Engineer                                                  │  │
+│  │ Anthropic  •  San Francisco, CA                      [Apply ↗]   │  │
+│  │ senior  •  posted 1 day ago  •  #b7e2f4a9                        │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│  [Load More (154 remaining)]                                           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+Click **[Apply ↗]** to open the job page. Click a company name to filter to that company. Search anything in the search box. That's all you need to know.
+
+---
+
+## Using Claude Every Day
+
+Once set up, you just talk to Claude. Here are the three things you'll do most:
+
+---
+
+### 🔍 Find new jobs
+
+```
+/jobhunter
+```
+
+Claude runs the search and shows your latest matches.
+
+---
+
+### 📋 Decide what to apply to
+
+```
+/classify-jobs
+```
+
+Claude goes through your P1 and P2 jobs and sorts them into:
+
+```
+✅ APPLY NOW  — do this tonight, you're a strong fit
+📅 THIS WEEK  — good match, block time for this
+🔼 STRETCH    — reach role, worth trying anyway
+⏭️  SKIP       — not the right fit, don't waste time
+```
+
+---
+
+### 📄 Get a resume for a specific job
+
+Copy the job ID from the dashboard (the `#a3f9c1d2` part on each card) and say:
+
+```
+/tailor-resume
+build a resume for job #a3f9c1d2
+```
+
+Claude reads the job description + your background → generates a polished, job-specific resume → opens it in your browser → Cmd+P (Mac) or Ctrl+P (Windows) to save as PDF.
+
+**The whole thing takes about 30 seconds.**
+
+---
+
+### 💬 Ask Claude anything
+
+```
+"Which of my P1 jobs should I apply to first?"
+"What's missing from my background for the Stripe role?"
+"Tell me more about job #b7e2f4a9 — is it worth my time?"
+"Add React to my skills and re-run the search"
+"Are there any machine learning roles I'm missing?"
+```
+
+Claude knows your profile, your resume, and all your matched jobs. Just talk to it.
+
+---
+
+## Set It and Forget It (Automatic Daily Updates)
+
+You can have the job dashboard refresh automatically every morning:
+
+**1.** Push the repo to your GitHub account:
+```bash
+cd ~/job-finder
+git remote set-url origin https://github.com/YOUR-USERNAME/job-finder.git
+git push -u origin main
+```
+
+**2.** On GitHub, go to your repo → **Settings** → **Pages** → **Source: GitHub Actions** → Save
+
+**3.** Done ✅
+
+Your dashboard now updates at **8am UTC every day** and lives at:
+```
+https://YOUR-USERNAME.github.io/job-finder
+```
+
+No clicking. No remembering. Just check your URL each morning.
+
+---
+
+## Common Questions
+
+**"Do I need to know how to code?"**
+Not really. You need to be comfortable opening Terminal and pasting a command. Claude handles everything else.
+
+**"Is this free?"**
+Yes. Job data is open-source, GitHub hosting is free, and Claude is included in your existing plan. Total cost: $0.
+
+**"Will it find jobs for my specific field?"**
+Yes — Claude sets up your profile around your target roles (Step 2). A designer will see design jobs; a PM will see PM jobs. If results aren't great, tell Claude: *"Help me tune my profile, I'm not seeing the right jobs."*
+
+**"Is my resume private?"**
+Yes. Your resume (`RESUME.md`) stays on your computer and is never uploaded to GitHub or anywhere else.
+
+**"Can I search for jobs at a specific company?"**
+Yes. In the dashboard, click any company name to filter to just that company. Or ask Claude: *"Show me all the Stripe jobs I matched."*
+
+**"My results aren't great. What do I do?"**
+Tell Claude: *"I'm getting mostly P3 jobs. Can you help me tune my profile?"* It'll ask questions and adjust your settings.
+
+---
+
+## How the Scoring Works
+
+Each job gets a score from 0–100 based on how well it matches your profile:
+
+| What gets scored | Weight | Example |
+|---|---|---|
+| Job title vs. your target roles | 35% | "Senior Software Engineer" matches "Software Engineer" |
+| Location vs. where you're based | 20% | Remote-OK roles score high if you're remote-open |
+| Seniority level | 15% | "Senior" matches if you said 4+ years experience |
+| Keywords in the job description | 15% | Boost for Python, Go, distributed systems, etc. |
+| Preferred companies | 10% | Stripe, Anthropic, Linear get a boost |
+| How recently posted | 5% | Brand new listings score slightly higher |
+
+P1 = scored 85–100 · P2 = 70–84 · P3 = 50–69
+
+---
+
+## Technical Details (for the curious)
+
+<details>
+<summary>Architecture, file structure, ATS platforms covered, and advanced config</summary>
+
+### How it works under the hood
+
+```
+DAILY PIPELINE (runs automatically via GitHub Actions)
+────────────────────────────────────────────────────
+
+  src/downloader.py     Download 502K jobs from job-board-aggregator (~15s)
+         ↓
+  src/scraper.py        Merge + deduplicate + clean
+         ↓
+  src/matcher.py        Score every job against profile.yaml (~8s)
+         ↓
+  src/report.py         CSV report + terminal summary
+         ↓
+  src/site_generator.py Build the HTML dashboard
+         ↓
+  GitHub Pages          Deployed automatically
+```
+
+### ATS platforms covered
+
+Greenhouse, Lever, Workday, Ashby, BambooHR — 12,000+ companies total.
+
+### File structure
+
+```
+job-finder/
+├── config/
+│   ├── profile.yaml          # Your preferences (edit this or let Claude do it)
+│   └── profile.yaml.example  # Template
+├── src/                      # Python pipeline
+│   ├── scraper.py            # Orchestrator: download + merge
+│   ├── matcher.py            # Score jobs against your profile
+│   ├── report.py             # CSV + terminal summary
+│   └── site_generator.py     # HTML dashboard builder
+├── jobhunter/SKILL.md        # /jobhunter Claude skill
+├── classify-jobs/SKILL.md    # /classify-jobs Claude skill
+├── tailor-resume/SKILL.md    # /tailor-resume Claude skill
+├── RESUME.md                 # Your resume in Markdown (gitignored — stays local)
+├── RESUME.md.example         # Template: copy to RESUME.md and fill in
+└── .github/workflows/
+    └── daily.yml             # Runs pipeline daily at 8am UTC
+```
+
+### Running the pipeline manually
 
 ```bash
 source .venv/bin/activate
@@ -165,126 +343,28 @@ python -m src.scraper           # Download & merge 502K jobs (~25s)
 python -m src.matcher           # Score & rank against your profile (~8s)
 python -m src.report            # CSV report + terminal summary
 python -m src.site_generator    # Generate HTML dashboard
-open site/index.html            # View your dashboard
+open site/index.html            # View dashboard
 ```
 
-### 5. Deploy to GitHub Pages
-
-1. Push your fork to GitHub
-2. Go to repo **Settings → Pages → Source: GitHub Actions**
-3. The workflow (`.github/workflows/daily.yml`) will run daily at 8am UTC
-
-Your dashboard will be live at `https://YOUR_USERNAME.github.io/job-finder`
-
----
-
-## Using Claude as Your Job-Hunting AI
-
-Load **SKILL.md** into Claude (or use it as a Claude Project Knowledge file). Then talk to Claude naturally:
-
-### Run the full pipeline
-> "Find me jobs" → Claude runs scraper → matcher → report → dashboard
-
-### Classify your matches
-> "Classify my P1 jobs" → Claude reads your scored data and sorts into APPLY NOW / THIS WEEK / STRETCH / SKIP
-
-### Reference jobs by ID
-Every job card shows a unique `#a3f9c1d2` ID. Use it to talk about specific jobs:
-> "Tell me about job #a3f9c1d2" → Claude looks it up and gives you a full analysis
-> "Build resume for job #a3f9c1d2" → Claude tailors your resume to that exact role
-
-### Get a tailored resume
-> "Build me a resume for the Netflix Analytics Engineer role" → Claude reads RESUME.md + the job description → generates a beautiful HTML resume → you open it and Cmd+P → PDF
-
-### Analyze a specific job
-> "Tell me about this job: [paste URL]" → Claude reads the description and tells you what matches, what's missing, and whether to apply
-
-### Update your profile
-> "Update my profile to add dbt to my skills" → Claude edits config/profile.yaml and re-runs the pipeline
-
----
-
-## Scoring Algorithm
-
-| Factor | Weight | How It Works |
-|--------|--------|-------------|
-| Title Match | 35% | Phrase-level match vs target roles (not token bags — "Data Center Engineer" ≠ "Data Analyst") |
-| Location | 20% | Exact city (1.0) → metro (0.95) → state (0.8) → relocation (0.7) → remote (1.0) |
-| Level | 15% | Exact match (1.0) → one-off (0.7) → two-off (0.3) |
-| Keywords | 15% | Boost keywords found in title, normalized and capped at 1.0 |
-| Company | 10% | Preferred company = 1.0, else 0.0 |
-| Recency | 5% | Freshness: max(0, 1 - days/30) |
-
-**Priority Tiers:** P1 (85-100, apply today), P2 (70-84, apply this week), P3 (50-69, apply if time)
-
----
-
-## LLM Upgrade Path
+### LLM upgrade path
 
 | Scorer | Status | How |
 |--------|--------|-----|
-| **Claude** (default) | ✅ Works now | Load SKILL.md → "classify my P1 jobs" |
+| **Claude** (default) | ✅ Works now | Load SKILL.md → talk to Claude |
 | **Ollama/DeepSeek** (local GPU) | 🔜 Planned | `src/llm_scorer.py` (not yet built) |
 
-Claude is the default and primary intelligence layer. The local model path (for automated batch scoring of 5K candidates overnight on your GPU) is planned but not yet implemented.
+</details>
 
 ---
 
-## File Structure
+## Credits
 
-```
-job-finder/
-├── config/
-│   ├── profile.yaml          # YOUR preferences (edit this — in git)
-│   └── profile.yaml.example  # Template for new users
-├── src/
-│   ├── scraper.py            # Orchestrator: download + live scrape + merge
-│   ├── matcher.py            # Score 502K jobs against your profile
-│   ├── report.py             # CSV + terminal summary
-│   ├── site_generator.py     # Static HTML dashboard
-│   ├── downloader.py         # JBA bulk download
-│   ├── jba_fetcher.py        # Live ATS scraping (vendored from JBA)
-│   └── config.py             # Shared config loading
-├── data/
-│   ├── seed/                 # Company slugs per ATS (committed)
-│   └── ...                   # Daily pipeline output (gitignored)
-├── site/
-│   └── index.html            # Generated dashboard (committed for GitHub Pages)
-├── SKILL.md                  # Claude skill definition — load into Claude
-├── RESUME.md                 # YOUR resume in Markdown (gitignored — personal)
-├── RESUME.md.example         # Template: copy to RESUME.md and fill in
-└── .github/workflows/
-    └── daily.yml             # GitHub Actions: runs pipeline daily
-```
-
----
-
-## Credits & Attribution
-
-Built on the shoulders of:
-
-- **[job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator)** (MIT License) — The data backbone. Scrapes 502K+ jobs daily from Greenhouse, Lever, Workday, Ashby, and BambooHR. Our `src/jba_fetcher.py` is vendored from their scraper.
-
-- **[awesome-easy-apply](https://github.com/nickmccullum/awesome-easy-apply)** — Company metadata (791 companies with descriptions, slugs, and LinkedIn URLs).
-
----
-
-## Cost
-
-| Resource | Cost |
-|----------|------|
-| Job data | Free (JBA open data on GitHub) |
-| Hosting | Free (GitHub Pages) |
-| Pipeline | Free (GitHub Actions, ~2 min/day) |
-| Claude intelligence | Free (within your Claude plan) |
-| **Total** | **$0/month** |
+Built on [job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator) (MIT) — the open-source dataset that makes 502K+ daily jobs possible.
 
 ---
 
 ## License
 
-[MIT](LICENSE) — Fork it, customize it, help people find jobs.
+[MIT](LICENSE) — Fork it, customize it, share it.
 
----
-
-*Built for job seekers, by job seekers. If this helps you land a role, star the repo ⭐*
+*If this helps you land a role, star the repo ⭐*
