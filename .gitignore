@@ -21,6 +21,17 @@ RESUME.md
 *.tex
 resumes/
 
+# Generated dashboard — rebuilt by GitHub Actions on every deploy
+site/index.html
+
+# Internal planning & review docs — not for repo consumers
+PLAN.md
+PLAN-CEO-REVIEW.md
+PLAN-ENG-REVIEW.md
+REVIEW-CEO.md
+REVIEW-ENG.md
+TODOS.md
+
 # G-Stack state
 .gstack/
 

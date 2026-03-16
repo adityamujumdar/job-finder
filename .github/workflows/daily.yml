@@ -4,7 +4,9 @@ on:
   schedule:
     # Run daily at 8am UTC (1am MST)
     - cron: '0 8 * * *'
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual trigger from Actions tab
+  push:
+    branches: [main]  # Also deploy on every push to main
 
 permissions:
   contents: read
