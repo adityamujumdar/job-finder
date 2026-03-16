@@ -1,12 +1,40 @@
 name: Daily Job Pipeline + Deploy
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TRIGGER STRATEGY
+#
+#   schedule (cron)    → full pipeline: download 502K jobs → score → generate → deploy
+#   workflow_dispatch  → full pipeline (manual trigger from Actions tab)
+#   push to main       → site-only rebuild using cached scored data (fast, no download)
+#                        skips doc-only pushes (markdown, skills, setup files)
+#
+# This means:
+#   • Job data refreshes once per day automatically ✅
+#   • UI changes (site_generator.py) go live immediately on push ✅
+#   • Markdown/skill edits don't waste Actions minutes ✅
+#   • "New today" badge works correctly (scored data cached between runs) ✅
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   schedule:
-    # Run daily at 8am UTC (1am MST)
-    - cron: '0 8 * * *'
+    # 6am UTC daily — ~4 hours after job-board-aggregator updates (~2am UTC)
+    - cron: '0 6 * * *'
+
   workflow_dispatch:  # Manual trigger from Actions tab
+
   push:
-    branches: [main]  # Also deploy on every push to main
+    branches: [main]
+    paths-ignore:
+      # Doc-only changes: skip the rebuild entirely
+      - '**.md'
+      - 'jobhunter/**'
+      - 'classify-jobs/**'
+      - 'tailor-resume/**'
+      - '.jac/**'
+      - 'setup'
+      - 'RESUME.md.example'
+      - 'config/profile.yaml.example'
+      - 'LICENSE'
 
 permissions:
   contents: read
@@ -23,6 +51,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,12 +65,67 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run pipeline (download + score)
+      # Compute date strings for cache keys
+      - name: Set date variables
         run: |
-          python -m src.scraper --skip-live
-          python -m src.matcher
-          python -m src.report
-          python -m src.site_generator
+          echo "TODAY=$(date -u +%Y-%m-%d)" >> $GITHUB_ENV
+          echo "YESTERDAY=$(date -u -d 'yesterday' +%Y-%m-%d)" >> $GITHUB_ENV
+
+      # ── Cache strategy ────────────────────────────────────────────────────
+      # Restore yesterday's scored data so site_generator can diff it for
+      # the "new today" badge. On push-only deploys this also provides the
+      # scored data needed to regenerate the site without re-downloading.
+      #
+      # Key lookup order:
+      #   1. scored-TODAY   (today's cron already ran — reuse it)
+      #   2. scored-YESTERDAY (normal case — compare against it)
+      #   3. scored-*       (fallback: any recent data, better than empty)
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Restore scored data cache
+        id: restore-scored
+        uses: actions/cache/restore@v4
+        with:
+          path: data/scored/
+          key: scored-${{ env.TODAY }}
+          restore-keys: |
+            scored-${{ env.YESTERDAY }}
+            scored-
+
+      # ── Pipeline ──────────────────────────────────────────────────────────
+      # schedule / workflow_dispatch → full pipeline (fresh download + score)
+      # push                        → site-only rebuild from cached scored data
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Run pipeline
+        run: |
+          if [[ "${{ github.event_name }}" != "push" ]]; then
+            echo "=== Full pipeline (download + score + report + site) ==="
+            python -m src.scraper --skip-live
+            python -m src.matcher
+            python -m src.report
+            python -m src.site_generator
+          else
+            echo "=== Push deploy: rebuilding site from cached scored data ==="
+            # Find the most recent scored file available
+            LATEST=$(ls -t data/scored/*.json 2>/dev/null | head -1)
+            if [[ -z "$LATEST" ]]; then
+              echo "❌ No cached scored data found."
+              echo "   Run 'Actions → Daily Job Pipeline → Run workflow' once to initialize."
+              exit 1
+            fi
+            DATE=$(basename "$LATEST" .json)
+            echo "Using scored data from $DATE"
+            python -m src.site_generator --date "$DATE"
+          fi
+
+      # Save today's scored data so tomorrow's run can compute "new today"
+      # Skip on push (we only have cached data, not fresh download)
+      # Skip if today's key already exists in cache (cron ran twice)
+      - name: Save scored data cache
+        if: github.event_name != 'push' && steps.restore-scored.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data/scored/
+          key: scored-${{ env.TODAY }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

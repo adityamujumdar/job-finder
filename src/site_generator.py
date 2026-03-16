@@ -85,9 +85,11 @@ def generate_site(date_str: str | None = None) -> str:
     jobs = _load_scored_jobs(date_str)
     yesterday_urls = _load_yesterday_ids(date_str)
 
-    # Mark new jobs
+    # Mark new jobs — only when yesterday's data actually exists.
+    # Without it every job would appear "new" (empty set → always not-in).
+    has_yesterday = bool(yesterday_urls)
     for j in jobs:
-        j["new"] = bool(j["u"] and j["u"] not in yesterday_urls)
+        j["new"] = bool(has_yesterday and j["u"] and j["u"] not in yesterday_urls)
 
     # Count stats
     p1 = sum(1 for j in jobs if j["p"] == "P1")
