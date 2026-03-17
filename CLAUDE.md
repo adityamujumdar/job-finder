@@ -86,8 +86,7 @@ the project root and follow its instructions exactly:**
 
 **Install globally** (enables these commands in any Claude Code project):
 ```bash
-git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder
-cd ~/job-finder && ./setup
+git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder 2>/dev/null || (cd ~/job-finder && git pull); cd ~/job-finder && ./setup
 ```
 
 ## Critical Rules

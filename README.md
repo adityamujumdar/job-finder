@@ -35,54 +35,38 @@ You    →  Cmd+P → PDF saved ✅
 
 ## Before You Start
 
-You need three things (all free):
+You need two things (both free):
 
 | | What | Why you need it | Get it |
 |---|---|---|---|
-| 🤖 | **Claude Code** | This is how you talk to JobHunter | [claude.ai/code](https://claude.ai/code) |
+| 🤖 | **Claude Code** | The AI that runs JobHunter for you | [claude.ai/code](https://claude.ai/code) |
 | 🐙 | **GitHub account** | Where your dashboard gets hosted | [github.com](https://github.com) — 30 seconds to sign up |
-| 💻 | **Terminal** | To run the one install command | Mac: search "Terminal" in Spotlight. Windows: use WSL |
 
 ---
 
-## Get Started in 3 Steps (~10 minutes)
+## Get Started (~5 minutes)
 
-### Step 1 — Install (2 minutes)
-
-Open your Terminal and paste this:
-
-```bash
-git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder
-cd ~/job-finder && ./setup
-```
-
-The setup script automatically:
-- ✅ Installs Python dependencies
-- ✅ Registers `/jobhunter`, `/classify-jobs`, `/tailor-resume` as Claude commands
-- ✅ Creates starter config files for you
-
----
-
-### Step 2 — Tell Claude What You're Looking For (5 minutes)
-
-Open Claude Code in a new terminal window:
-
-```bash
-claude
-```
-
-Then type this command:
+### Step 1 — Open Claude Code and paste this
 
 ```
-/jobhunter
+git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder 2>/dev/null || (cd ~/job-finder && git pull); cd ~/job-finder && ./setup
 ```
 
-Claude will ask you a few questions and configure everything for you:
+Claude installs everything, registers the skills, then asks what kind of jobs you're looking for:
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║  Claude Code — Terminal                                          ║
+║  Claude Code                                                      ║
 ╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  ✅ JobHunter AI is ready!                                       ║
+║                                                                  ║
+║  Available skills:                                               ║
+║     /jobhunter        → find and score 502K+ jobs                ║
+║     /classify-jobs    → rank matches: APPLY NOW / THIS WEEK      ║
+║     /tailor-resume    → build a tailored resume for a job        ║
+║                                                                  ║
+║  💡 Type /jobhunter to start your job search!                    ║
 ║                                                                  ║
 ║  You: /jobhunter                                                 ║
 ║                                                                  ║
@@ -119,11 +103,11 @@ Claude will ask you a few questions and configure everything for you:
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-> **You don't need to edit any config files.** Claude handles that for you.
+> **You don't need to edit any config files.** Claude handles everything for you.
 
 ---
 
-### Step 3 — See Your Jobs (instant)
+### Step 2 — See Your Jobs (instant)
 
 Claude opens (or tells you to open) `site/index.html` in your browser. Here's what you'll see:
 
@@ -250,13 +234,13 @@ No clicking. No remembering. Just check your URL each morning.
 ## Common Questions
 
 **"Do I need to know how to code?"**
-Not really. You need to be comfortable opening Terminal and pasting a command. Claude handles everything else.
+Not at all. You paste one line into Claude Code and it handles everything.
 
 **"Is this free?"**
 Yes. Job data is open-source, GitHub hosting is free, and Claude is included in your existing plan. Total cost: $0.
 
 **"Will it find jobs for my specific field?"**
-Yes — Claude sets up your profile around your target roles (Step 2). A designer will see design jobs; a PM will see PM jobs. If results aren't great, tell Claude: *"Help me tune my profile, I'm not seeing the right jobs."*
+Yes — Claude sets up your profile around your target roles (Step 1). A designer will see design jobs; a PM will see PM jobs. If results aren't great, tell Claude: *"Help me tune my profile, I'm not seeing the right jobs."*
 
 **"Is my resume private?"**
 Yes. Your resume (`RESUME.md`) stays on your computer and is never uploaded to GitHub or anywhere else.
