@@ -21,8 +21,9 @@ RESUME.md
 *.tex
 resumes/
 
-# Generated dashboard — rebuilt by GitHub Actions on every deploy
-site/index.html
+# Generated dashboard — rebuilt by GitHub Actions on every deploy.
+# site/index.html is tracked (placeholder page for fresh clones).
+# site_generator.py overwrites it with real data after pipeline runs.
 
 # Internal planning & review docs — not for repo consumers
 PLAN.md

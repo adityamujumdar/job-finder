@@ -3,8 +3,8 @@
 # Run this once after cloning to register skills with Claude Code globally.
 #
 # Usage:
-#   git clone https://github.com/adityamujumdar/job-finder.git ~/projects/job-finder
-#   cd ~/projects/job-finder && ./setup
+#   git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder
+#   cd ~/job-finder && ./setup
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

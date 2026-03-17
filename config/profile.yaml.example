@@ -63,10 +63,10 @@ preferred_companies:
   greenhouse:
     - "anthropic"     # jobs.greenhouse.io/anthropic
     - "stripe"        # jobs.greenhouse.io/stripe
-  lever:
-    - "netflix"       # jobs.lever.co/netflix
+  lever: []           # e.g. "rippling" → jobs.lever.co/rippling
   # workday format: "company|instance|site"
   # Example: "nvidia|wd5|NVIDIAExternalCareerSite"
+  # Netflix is on Workday, NOT Lever. Most Big Tech (Google, Apple, Meta) is also Workday.
   # ashby: just the slug from jobs.ashby.io/SLUG
 
 exclude_recruiters: true    # Filter out staffing/recruiting companies

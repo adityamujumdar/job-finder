@@ -238,7 +238,7 @@ git push -u origin main
 
 **3.** Done ✅
 
-Your dashboard now updates at **8am UTC every day** and lives at:
+Your dashboard now updates at **6am UTC every day** and lives at:
 ```
 https://YOUR-USERNAME.github.io/job-finder
 ```
@@ -332,7 +332,7 @@ job-finder/
 ├── RESUME.md                 # Your resume in Markdown (gitignored — stays local)
 ├── RESUME.md.example         # Template: copy to RESUME.md and fill in
 └── .github/workflows/
-    └── daily.yml             # Runs pipeline daily at 8am UTC
+    └── daily.yml             # Runs pipeline daily at 6am UTC
 ```
 
 ### Running the pipeline manually
