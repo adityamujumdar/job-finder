@@ -31,7 +31,7 @@ trend tracking, frame gaps as leveling-up opportunities not failures.
 ## Never stop for:
 - Missing `.venv` — create it and install deps automatically
 - Missing `config/profile.yaml` — copy the example and run profile setup
-- Missing `RESUME.md` — copy the example and continue (prompt user to fill it in later)
+- Missing `RESUME.md` — continue without it (pipeline works fine; /tailor-resume will ask for it when needed)
 - Stale cached data (use it, note its age)
 - Some companies failing to live-scrape (report them, continue with what succeeded)
 - Warnings in scraper output (log them, don't surface to user)
@@ -72,13 +72,8 @@ else
   echo "✅ profile.yaml found"
 fi
 
-# 3. Resume — copy example if missing
-if [ ! -f "RESUME.md" ]; then
-  cp RESUME.md.example RESUME.md
-  echo "⚙️  Created RESUME.md from example — fill in your experience when ready"
-else
-  echo "✅ RESUME.md found"
-fi
+# 3. Resume check (not blocking — pipeline works without it)
+[ -f "RESUME.md" ] && echo "✅ RESUME.md found" || echo "⚠️  No RESUME.md yet — /tailor-resume will ask for your resume when needed"
 ```
 
 ```bash

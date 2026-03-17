@@ -62,11 +62,8 @@ else
   source .venv/bin/activate
 fi
 
-# 2. Ensure RESUME.md exists — create from example if missing
-if [ ! -f "RESUME.md" ]; then
-  cp RESUME.md.example RESUME.md
-  echo "⚙️  Created RESUME.md from example"
-fi
+# 2. Check for RESUME.md
+[ -f "RESUME.md" ] && echo "✅ RESUME.md found" || echo "⚙️  No RESUME.md yet — will ask user for their resume"
 
 # 3. Check scored data (needed for job ID lookup)
 python3 -c "
@@ -77,7 +74,18 @@ print('✅ Scored data found' if path.exists() else '⚙️  No scored data — 
 " 2>/dev/null
 ```
 
-**If RESUME.md was just created from example:** Ask the user to fill in their experience before generating the tailored resume. Walk them through it: "I created RESUME.md for you — let's fill it in. What's your most recent job title and company?" Guide them through each section (experience, skills, education), write the file, then continue with the resume tailoring.
+**If RESUME.md is missing:** Ask the user to provide their resume. Use AskUserQuestion with these options:
+
+1. **"Point me to your resume file"** — User gives a path (e.g. `~/Documents/resume.pdf`, `~/Desktop/Resume.docx`). Read the file, extract the content, and write it to `RESUME.md` in markdown format.
+2. **"I'll paste it here"** — User pastes their resume text. Parse it and write to `RESUME.md`.
+3. **"I have it on LinkedIn"** — Browse their LinkedIn profile to extract experience, then write `RESUME.md`.
+
+After the user provides their resume (by any method), convert it to clean markdown and save as `RESUME.md`:
+```bash
+# Confirm with user before writing
+echo "Writing your resume to RESUME.md..."
+```
+Then tell them: "✅ Created RESUME.md from your resume. This stays local and is never uploaded anywhere." Then continue with the tailoring.
 
 **If scored data is missing and user provides a job ID:** Run the pipeline automatically:
 ```bash
