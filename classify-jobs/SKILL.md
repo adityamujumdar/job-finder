@@ -121,6 +121,22 @@ Every classification must include a one-line reason anchored in actual data.
 | **⚡ STRETCH** | Interesting but meaningfully underqualified. Apply only if excited — a reach, not a waste. |
 | **⏭️ SKIP** | Wrong function, staffing firm, expired listing, or score is a false positive. |
 
+### Skill gap analysis (mandatory per job)
+
+For every job classified as APPLY NOW, APPLY THIS WEEK, or STRETCH, include a skill tag line
+showing which of your skills match and which are gaps:
+
+```
+Skills: ✅ SQL  ✅ Python  ✅ Tableau  ⚠️ dbt (nice-to-have)  ❌ Go (required)
+```
+
+- ✅ = you have it and they want it
+- ⚠️ = they mention it but it's learnable / nice-to-have
+- ❌ = they require it and you don't have it (disqualifying gap)
+
+Only list skills relevant to the specific job description. Don't pad with irrelevant matches.
+For SKIP jobs, a skill line is optional — the SKIP reason is sufficient.
+
 ### Anchor rules (from gstack/retro: "anchor praise in actual commits")
 
 - ✅ "Scores 97.9 — your SQL + Tableau background matches their required tools exactly" → valid
@@ -155,15 +171,25 @@ Lead with the headline count, then the classified list:
 
 ```
 🎯 APPLY NOW (tonight):
-  #a3f9c1d2  Netflix Analytics Engineer        Remote   97.9  — SQL + Tableau, exact level match
-  #b2c1d3e4  Anthropic Data Analyst            SF       92.8  — Python + BI, mission-driven company
+  #a3f9c1d2  Netflix Analytics Engineer        Remote   97.9
+    — SQL + Tableau, exact level match
+    — Skills: ✅ SQL  ✅ Python  ✅ Tableau  ✅ Analytics
+  #b2c1d3e4  Anthropic Data Analyst            SF       92.8
+    — Python + BI, mission-driven company
+    — Skills: ✅ Python  ✅ SQL  ✅ BI  ⚠️ dbt (nice-to-have)
 
 📅 APPLY THIS WEEK:
-  #c4d5e6f7  Stripe BI Analyst                 Remote   85.2  — Strong fit; dbt gap (learnable)
-  #d6e7f8a9  Linear Data Engineer              Remote   83.1  — Solid match; uses Go (you know Python)
+  #c4d5e6f7  Stripe BI Analyst                 Remote   85.2
+    — Strong fit; dbt gap (learnable)
+    — Skills: ✅ SQL  ✅ Python  ⚠️ dbt (learnable)  ⚠️ Looker (similar to Tableau)
+  #d6e7f8a9  Linear Data Engineer              Remote   83.1
+    — Solid match; uses Go (you know Python)
+    — Skills: ✅ SQL  ✅ Python  ❌ Go (required)
 
 ⚡ STRETCH (apply if excited):
-  #e8f9a0b1  OpenAI Research Analyst           SF       78.1  — Heavy ML context; worth trying if mission resonates
+  #e8f9a0b1  OpenAI Research Analyst           SF       78.1
+    — Heavy ML context; worth trying if mission resonates
+    — Skills: ✅ Python  ✅ SQL  ❌ PyTorch (required)  ❌ ML pipelines (required)
 
 ⏭️ SKIP:
   #f1a2b3c4  Acme Corp Data Infrastructure     Remote   74.6  — SRE/Kubernetes, wrong function
