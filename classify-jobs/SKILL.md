@@ -27,10 +27,11 @@ read the full diff before commenting — read every job before bucketing any of 
 ---
 
 ## Only stop for:
-- No scored data exists for today (run `/jobhunter` first)
-- `config/profile.yaml` is missing
+- Nothing. Fix every missing prerequisite automatically.
 
 ## Never stop for:
+- Missing scored data — run the full pipeline inline (scraper → matcher → report → site)
+- Missing profile.yaml — copy example and run profile setup
 - Low P1 count (classify what's there, even if it's just 2 jobs)
 - Jobs you've already classified (re-classify if asked — the user asked)
 - Asking permission to move on to the next job
@@ -43,10 +44,29 @@ read the full diff before commenting — read every job before bucketing any of 
 
 ---
 
-## Step 0 — Prerequisite Check
+## Step 0 — Prerequisite Check & Auto-Fix
+
+**Fix everything automatically — never tell the user to "run /jobhunter first."**
 
 ```bash
-[ -f "config/profile.yaml" ] || echo "❌ Missing profile — run /jobhunter first"
+# 1. Ensure .venv exists
+if [ ! -d ".venv" ]; then
+  echo "⚙️  Creating .venv..."
+  python3 -m venv .venv && source .venv/bin/activate && pip install -q -r requirements.txt
+  echo "✅ Environment ready"
+else
+  source .venv/bin/activate
+fi
+
+# 2. Ensure profile exists
+if [ ! -f "config/profile.yaml" ]; then
+  cp config/profile.yaml.example config/profile.yaml
+  echo "⚙️  Created profile.yaml — will need to set up your profile first"
+fi
+```
+
+```bash
+# 3. Check for scored data — run the pipeline if missing
 python3 -c "
 import json, pathlib
 today = __import__('datetime').date.today().isoformat()
@@ -57,9 +77,16 @@ if path.exists():
     p2 = sum(1 for j in jobs if j.get('_priority') == 'P2')
     print(f'✅ {len(jobs)} jobs loaded — {p1} P1, {p2} P2')
 else:
-    print(f'❌ No scored data for {today} — run /jobhunter first')
+    print(f'⚙️  No scored data for {today} — running pipeline now...')
 " 2>/dev/null
 ```
+
+If scored data is missing: **run the pipeline automatically** before classifying:
+```bash
+python -m src.scraper --skip-live && python -m src.matcher && python -m src.report && python -m src.site_generator
+```
+
+If profile.yaml was just created from example: **run profile setup first** (ask the user what roles they're looking for, where they're based, etc. — same as `/jobhunter` Step 1), then run the pipeline, then classify.
 
 ---
 

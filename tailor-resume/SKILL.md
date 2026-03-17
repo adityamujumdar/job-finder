@@ -38,6 +38,7 @@ in a cover letter that you've worked with similar orchestration tools" is better
 - Present the HTML without first showing your analysis (what you changed and why)
 - Add skills to the skills section that aren't in RESUME.md
 - Invent a summary — base it on actual experience from RESUME.md, angled toward this role
+- Stop and tell the user to "follow setup steps" or "run X first" — fix it for them
 
 ---
 
@@ -47,23 +48,44 @@ in a cover letter that you've worked with similar orchestration tools" is better
 
 ---
 
-## Step 0 — Prerequisite Check
+## Step 0 — Prerequisite Check & Auto-Fix
 
-Run this check first, every time:
+Run this check first, every time. **Fix everything automatically.**
 
 ```bash
-[ -f "RESUME.md" ] && echo "✅ RESUME.md found" \
-  || echo "❌ Missing — run: cp RESUME.md.example RESUME.md  (then fill in your info)"
+# 1. Ensure .venv exists
+if [ ! -d ".venv" ]; then
+  echo "⚙️  Creating .venv..."
+  python3 -m venv .venv && source .venv/bin/activate && pip install -q -r requirements.txt
+  echo "✅ Environment ready"
+else
+  source .venv/bin/activate
+fi
 
+# 2. Ensure RESUME.md exists — create from example if missing
+if [ ! -f "RESUME.md" ]; then
+  cp RESUME.md.example RESUME.md
+  echo "⚙️  Created RESUME.md from example"
+fi
+
+# 3. Check scored data (needed for job ID lookup)
 python3 -c "
 import pathlib
 today = __import__('datetime').date.today().isoformat()
 path = pathlib.Path(f'data/scored/{today}.json')
-print('✅ Scored data found' if path.exists() else '⚠️  No scored data — job ID lookup may fail')
+print('✅ Scored data found' if path.exists() else '⚙️  No scored data — will run pipeline if job ID lookup is needed')
 " 2>/dev/null
 ```
 
-**If RESUME.md is missing: STOP. Tell the user to create it. Do not continue.**
+**If RESUME.md was just created from example:** Ask the user to fill in their experience before generating the tailored resume. Walk them through it: "I created RESUME.md for you — let's fill it in. What's your most recent job title and company?" Guide them through each section (experience, skills, education), write the file, then continue with the resume tailoring.
+
+**If scored data is missing and user provides a job ID:** Run the pipeline automatically:
+```bash
+python -m src.scraper --skip-live && python -m src.matcher
+```
+Then look up the job ID and continue.
+
+**If scored data is missing and user provides a job URL or description:** No pipeline needed — proceed directly with the provided information.
 
 ---
 

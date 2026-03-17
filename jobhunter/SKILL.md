@@ -25,12 +25,13 @@ trend tracking, frame gaps as leveling-up opportunities not failures.
 ---
 
 ## Only stop for:
-- `config/profile.yaml` missing (can't score without a profile)
-- `.venv` missing and `pip install` fails
 - Network is down and JBA download fails after retry
 - Scored data is 0 jobs (something went wrong — show the error)
 
 ## Never stop for:
+- Missing `.venv` — create it and install deps automatically
+- Missing `config/profile.yaml` — copy the example and run profile setup
+- Missing `RESUME.md` — copy the example and continue (prompt user to fill it in later)
 - Stale cached data (use it, note its age)
 - Some companies failing to live-scrape (report them, continue with what succeeded)
 - Warnings in scraper output (log them, don't surface to user)
@@ -44,16 +45,40 @@ trend tracking, frame gaps as leveling-up opportunities not failures.
 
 ---
 
-## Step 0 — Prerequisite Check
+## Step 0 — Prerequisite Check & Auto-Fix
 
-Run this check first, every time. Do not proceed if it fails.
+Run this check first, every time. **Fix everything automatically — never tell the user to do it themselves.**
 
 ```bash
 echo "=== JobHunter AI — Prerequisite Check ==="
-# Python environment
-[ -d ".venv" ] && echo "✅ .venv found" || echo "❌ .venv missing — run: python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
-[ -f "config/profile.yaml" ] && echo "✅ profile.yaml found" || echo "❌ No profile — type /jobhunter and Claude will set it up for you"
-[ -f "RESUME.md" ] && echo "✅ RESUME.md found" || echo "⚠️  No RESUME.md — run: cp RESUME.md.example RESUME.md (needed for resume tailoring)"
+
+# 1. Python environment — create if missing
+if [ ! -d ".venv" ]; then
+  echo "⚙️  Creating .venv..."
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -q -r requirements.txt
+  echo "✅ .venv created and dependencies installed"
+else
+  echo "✅ .venv found"
+  source .venv/bin/activate
+fi
+
+# 2. Profile — copy example if missing (profile setup will customize it in Step 1)
+if [ ! -f "config/profile.yaml" ]; then
+  cp config/profile.yaml.example config/profile.yaml
+  echo "⚙️  Created config/profile.yaml from example — will customize in profile setup"
+else
+  echo "✅ profile.yaml found"
+fi
+
+# 3. Resume — copy example if missing
+if [ ! -f "RESUME.md" ]; then
+  cp RESUME.md.example RESUME.md
+  echo "⚙️  Created RESUME.md from example — fill in your experience when ready"
+else
+  echo "✅ RESUME.md found"
+fi
 ```
 
 ```bash
@@ -75,10 +100,9 @@ else:
 " 2>/dev/null || echo "⚠️  Could not check profile staleness — will rescore to be safe"
 ```
 
-If profile.yaml is missing: offer to set up the profile now (see Profile Setup below).
-If .venv is missing: show the fix and stop.
-If only RESUME.md is missing: continue with a warning — pipeline still works, tailoring won't.
-If profile staleness check shows ⚠️: proceed with the pipeline — Step 2 (matcher) will regenerate scored data and the new `.meta.json` against the current profile.
+If profile.yaml was just created from example: proceed to Step 1 (Profile Setup) to customize it.
+If profile staleness check shows ⚠️: proceed with the pipeline — the matcher will rescore against the current profile.
+**Never stop. Never tell the user to "run X first." Fix it and keep going.**
 
 ---
 
