@@ -49,3 +49,4 @@ venv/
 # IDE
 .idea/
 .vscode/
+site/dashboard.png
