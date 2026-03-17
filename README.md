@@ -31,7 +31,7 @@ Then Claude helps you act on the best ones — classify which to apply to first,
 
 ## Get Started (~5 minutes)
 
-> 🤖 **You'll need [Claude Code](https://claude.ai/code)** — it's free with a Claude account.
+> 🤖 **You'll need [Claude Code](https://claude.ai/code)** — requires a Claude Pro or Max subscription ($20+/month).
 
 ### Step 1 — Open Claude Code and paste this
 
@@ -152,7 +152,7 @@ Not at all. You paste one line into Claude Code and it handles everything.
 
 <details>
 <summary><strong>Is this free?</strong></summary>
-Yes. Job data is open-source, GitHub hosting is free, and Claude is included in your existing plan.
+Job data is open-source and GitHub hosting is free. Claude Code requires a Pro or Max subscription ($20+/month).
 </details>
 
 <details>
