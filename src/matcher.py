@@ -470,6 +470,83 @@ def run_matcher(date: str | None = None, min_score: float = 0) -> dict:
     return result
 
 
+# ── Browsed Job Integration ───────────────────────────────────────────────────
+#
+# Browsed jobs (from gstack /browse) are scored and merged into the daily
+# scored data so they appear in reports, dashboard, and /classify-jobs.
+#
+#   Browse text ──▶ Claude extracts fields ──▶ score_and_save_browsed()
+#                                                    │
+#                                    ┌───────────────┤
+#                                    ▼               ▼
+#                              score_job()    append to data/scored/DATE.json
+#                              classify()     (dedup by URL, tagged _source=browse)
+
+def score_and_save_browsed(job_dict: dict, date: str | None = None) -> dict:
+    """Score a single browsed job and append it to today's scored data.
+
+    Args:
+        job_dict: Job dict with at minimum: title, company, url.
+                  Optional: location, skill_level, ats, scraped_at.
+        date: Date string (YYYY-MM-DD). Defaults to today.
+
+    Returns:
+        The job dict with _score, _priority, and _source fields added.
+
+    Raises:
+        ValueError: If required fields (title, company, url) are missing.
+    """
+    ensure_dirs()
+
+    # Validate required fields
+    required = ["title", "company", "url"]
+    missing = [f for f in required if not job_dict.get(f)]
+    if missing:
+        raise ValueError(f"Browsed job missing required fields: {missing}")
+
+    # Apply safe defaults for optional fields
+    job = dict(job_dict)
+    job.setdefault("location", "")
+    job.setdefault("skill_level", "")
+    job.setdefault("ats", "browse")
+    job.setdefault("is_recruiter", False)
+    job.setdefault("scraped_at", datetime.now(timezone.utc).isoformat())
+
+    # Score against profile
+    profile = load_profile()
+    score = score_job(job, profile)
+    priority = classify_priority(score)
+
+    job["_score"] = score
+    job["_priority"] = priority
+    job["_source"] = "browse"
+
+    # Append to today's scored data (dedup by URL)
+    date_str = date or today()
+    scored_path = SCORED_DIR / f"{date_str}.json"
+
+    if scored_path.exists():
+        with open(scored_path) as f:
+            scored = json.load(f)
+    else:
+        scored = []
+
+    # Remove existing entry with same URL (re-browse updates the score)
+    job_url = job["url"]
+    scored = [j for j in scored if j.get("url") != job_url]
+
+    scored.append(job)
+    scored.sort(key=lambda j: j.get("_score", 0), reverse=True)
+
+    with open(scored_path, "w") as f:
+        json.dump(scored, f)
+
+    log.info("Browsed job scored: %s @ %s → %.1f (%s)",
+             job["title"], job["company"], score, priority)
+
+    return job
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import argparse

@@ -138,11 +138,28 @@ Validate the output contains job description content before using it.
 2. **"I'll paste the job description"** — Accept pasted text.
 3. **"Skip this job"** — Continue without it.
 
-Add these manually-fetched jobs to the candidate list alongside P1/P2 jobs from scored data.
-Classify them using the same bucket criteria. Mark them in the output:
+After fetching (via browse or paste), **score and save the browsed job:**
 
+1. Extract from the text: `title`, `company`, `location`, `url`, `skill_level`.
+2. Score it:
+```bash
+python3 -c "
+from src.matcher import score_and_save_browsed
+result = score_and_save_browsed({
+    'title': 'REPLACE_TITLE',
+    'company': 'REPLACE_COMPANY',
+    'url': 'REPLACE_URL',
+    'location': 'REPLACE_LOCATION',
+    'skill_level': 'REPLACE_LEVEL',
+})
+print(f\"✅ {result['title']} @ {result['company']} → {result['_score']:.1f} ({result['_priority']})\")
+"
 ```
-📌 (Manual — user-provided URL, not in JBA scored data)
+
+The job is now in `data/scored/DATE.json` (tagged `_source: browse`) and will be included
+in the candidate list automatically. Classify it using the same bucket criteria. Mark in output:
+```
+🌐 (Browsed — scored via pipeline, not from JBA)
 ```
 
 ---

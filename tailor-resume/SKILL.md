@@ -171,6 +171,23 @@ LinkedIn listings, etc.). The job does not need to be in the scored dataset.
 Validate the output contains job description content (title, requirements, responsibilities).
 If the page returned an error or login wall, tell the user and ask them to paste the JD instead.
 
+**After fetching, score and save the browsed job so it enters the pipeline:**
+```bash
+python3 -c "
+from src.matcher import score_and_save_browsed
+result = score_and_save_browsed({
+    'title': 'REPLACE_TITLE',
+    'company': 'REPLACE_COMPANY',
+    'url': 'REPLACE_URL',
+    'location': 'REPLACE_LOCATION',
+    'skill_level': 'REPLACE_LEVEL',
+})
+print(f\"✅ Scored: {result['_score']:.1f} ({result['_priority']})\")
+"
+```
+This ensures the job appears in the dashboard and `/classify-jobs` even if the user
+only came through `/tailor-resume`.
+
 **If gstack is NOT available:** Use AskUserQuestion:
 1. **"Install gstack now"** — Show:
    `git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup`

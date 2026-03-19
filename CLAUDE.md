@@ -119,6 +119,17 @@ $B text
 ```
 Use browse when: a company isn't in JBA, user provides a direct job URL, or user mentions a specific non-JBA company (Google, Apple, Amazon, Scotiabank, etc.).
 
+**Scoring browsed jobs:** After fetching a job via browse, score it and merge into the pipeline:
+```python
+from src.matcher import score_and_save_browsed
+result = score_and_save_browsed({
+    "title": "...", "company": "...", "url": "...",
+    "location": "...", "skill_level": "mid",
+})
+# → scored, classified, appended to data/scored/DATE.json (_source: "browse")
+```
+Browsed jobs appear in dashboard, CSV report, and `/classify-jobs` alongside JBA jobs.
+
 ## Critical Rules
 
 1. **Profile staleness check — ALWAYS verify before showing results.**

@@ -4,11 +4,12 @@ Profile-agnostic: tests use hardcoded fixtures from conftest.py, not config/prof
 Two profile variants: bi_profile (BI/Data) and swe_profile (Backend SWE).
 """
 
+import json
 import pytest
 from src.matcher import (
     score_job, score_title_match, score_location_match, score_level_match,
     score_keyword_boost, score_company_preference, score_recency,
-    classify_priority, should_exclude,
+    classify_priority, should_exclude, score_and_save_browsed,
 )
 from src.jba_fetcher import job_tier_classification
 
@@ -353,3 +354,96 @@ class TestPreferredCompanyWeight:
         diff = score_job(preferred, bi_profile) - score_job(non_preferred, bi_profile)
         # company_preference weight is 0.15 → max 15 point bonus
         assert 10 <= diff <= 15, f"Preferred company bonus was {diff}, expected 10-15"
+
+
+# ── Browsed Job Integration Tests ────────────────────────────────────────────
+
+class TestScoreAndSaveBrowsed:
+    """Tests for score_and_save_browsed() — browsed jobs get scored and persisted."""
+
+    def test_basic_score_and_save(self, bi_profile, tmp_path, monkeypatch):
+        """Happy path: browsed job gets scored, saved, tagged _source=browse."""
+        monkeypatch.setattr("src.matcher.load_profile", lambda: bi_profile)
+        monkeypatch.setattr("src.matcher.SCORED_DIR", tmp_path)
+
+        job = {
+            "title": "Data Analyst",
+            "company": "Scotiabank",
+            "url": "https://scotiabank.com/jobs/12345",
+            "location": "Toronto, ON",
+        }
+        result = score_and_save_browsed(job, date="2026-03-18")
+
+        assert result["_score"] > 0
+        assert result["_priority"] in ("P1", "P2", "P3", "P4")
+        assert result["_source"] == "browse"
+        assert result["ats"] == "browse"
+
+        # Verify it was persisted
+        saved = json.loads((tmp_path / "2026-03-18.json").read_text())
+        assert len(saved) == 1
+        assert saved[0]["url"] == "https://scotiabank.com/jobs/12345"
+
+    def test_missing_required_fields(self, bi_profile, monkeypatch):
+        """Rejects jobs missing title, company, or url."""
+        monkeypatch.setattr("src.matcher.load_profile", lambda: bi_profile)
+
+        with pytest.raises(ValueError, match="missing required fields"):
+            score_and_save_browsed({"title": "Data Analyst"})
+
+        with pytest.raises(ValueError, match="missing required fields"):
+            score_and_save_browsed({"title": "Analyst", "company": "X"})
+
+    def test_dedup_by_url(self, bi_profile, tmp_path, monkeypatch):
+        """Re-browsing same URL replaces the old entry, not duplicates."""
+        monkeypatch.setattr("src.matcher.load_profile", lambda: bi_profile)
+        monkeypatch.setattr("src.matcher.SCORED_DIR", tmp_path)
+
+        job = {
+            "title": "Data Analyst",
+            "company": "Scotiabank",
+            "url": "https://scotiabank.com/jobs/12345",
+        }
+        score_and_save_browsed(job, date="2026-03-18")
+        score_and_save_browsed(job, date="2026-03-18")  # same URL again
+
+        saved = json.loads((tmp_path / "2026-03-18.json").read_text())
+        assert len(saved) == 1, "Should not duplicate — dedup by URL"
+
+    def test_no_existing_file(self, bi_profile, tmp_path, monkeypatch):
+        """Works when no scored file exists yet (creates it)."""
+        monkeypatch.setattr("src.matcher.load_profile", lambda: bi_profile)
+        monkeypatch.setattr("src.matcher.SCORED_DIR", tmp_path)
+
+        job = {
+            "title": "BI Developer",
+            "company": "NewCo",
+            "url": "https://newco.com/jobs/1",
+        }
+        result = score_and_save_browsed(job, date="2026-03-19")
+
+        assert result["_score"] > 0
+        assert (tmp_path / "2026-03-19.json").exists()
+
+    def test_appends_to_existing(self, bi_profile, tmp_path, monkeypatch):
+        """Browsed job appends to existing scored data, doesn't overwrite."""
+        monkeypatch.setattr("src.matcher.load_profile", lambda: bi_profile)
+        monkeypatch.setattr("src.matcher.SCORED_DIR", tmp_path)
+
+        # Seed with an existing job
+        existing = [{"title": "Existing Job", "company": "X", "url": "https://x.com/1",
+                      "_score": 90.0, "_priority": "P1"}]
+        (tmp_path / "2026-03-18.json").write_text(json.dumps(existing))
+
+        job = {
+            "title": "Data Analyst",
+            "company": "Scotiabank",
+            "url": "https://scotiabank.com/jobs/12345",
+        }
+        score_and_save_browsed(job, date="2026-03-18")
+
+        saved = json.loads((tmp_path / "2026-03-18.json").read_text())
+        assert len(saved) == 2, "Should append, not overwrite"
+        urls = {j["url"] for j in saved}
+        assert "https://x.com/1" in urls
+        assert "https://scotiabank.com/jobs/12345" in urls

@@ -338,12 +338,35 @@ Use AskUserQuestion with these options:
 2. **"I'll paste the job description"** — Accept pasted text and continue.
 3. **"Skip this job"** — Continue without it.
 
-After fetching, present the job alongside the scored results with a note:
+After fetching (via browse or paste), **extract the job fields and score it through the pipeline:**
+
+1. From the job description text, extract: `title`, `company`, `location`, `url`, and `skill_level`
+   (one of: intern, entry, mid, senior, lead, manager — infer from title/description).
+
+2. Score and save the browsed job:
+```bash
+python3 -c "
+from src.matcher import score_and_save_browsed
+result = score_and_save_browsed({
+    'title': 'REPLACE_TITLE',
+    'company': 'REPLACE_COMPANY',
+    'url': 'REPLACE_URL',
+    'location': 'REPLACE_LOCATION',
+    'skill_level': 'REPLACE_LEVEL',
+})
+print(f\"✅ {result['title']} @ {result['company']} → {result['_score']:.1f} ({result['_priority']})\")
+"
 ```
-📌 Manual addition (not in JBA):
-   Backend Software Engineer @ Scotiabank  Toronto · (manual — not scored)
+
+3. Present the scored browsed job alongside pipeline results:
+```
+🌐 Browsed job (scored & saved):
+   #xxxxxxxx  Backend Software Engineer @ Scotiabank  Toronto · 87.3 · P1
    URL: https://jobs.scotiabank.com/...
 ```
+
+The job is now in `data/scored/DATE.json` (tagged `_source: browse`), so it will appear
+in the dashboard, CSV report, and `/classify-jobs` automatically.
 
 Then offer: "Want me to classify this job or tailor your resume for it? → `/classify-jobs` or `/tailor-resume`"
 
