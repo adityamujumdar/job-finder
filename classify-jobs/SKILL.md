@@ -63,6 +63,19 @@ if [ ! -f "config/profile.yaml" ]; then
   cp config/profile.yaml.example config/profile.yaml
   echo "⚙️  Created profile.yaml — will need to set up your profile first"
 fi
+
+# 3. gstack/browse check — ADVISORY (not blocking).
+if [ -d "$HOME/.claude/skills/gstack" ] && [ -f "$HOME/.claude/skills/gstack/browse/bin/find-browse" ]; then
+  echo "✅ gstack/browse available"
+else
+  echo "⚠️  gstack not installed — browse (fetching job descriptions from career pages) unavailable"
+  echo "   To install: git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup"
+  echo "   Then add a 'gstack' section to CLAUDE.md that says to use /browse for all web browsing,"
+  echo "   never use mcp__claude-in-chrome__* tools, and lists available skills:"
+  echo "   /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,"
+  echo "   /design-consultation, /review, /ship, /browse, /qa, /qa-only,"
+  echo "   /design-review, /setup-browser-cookies, /retro, /debug, /document-release"
+fi
 ```
 
 ```bash
@@ -94,19 +107,36 @@ If profile.yaml was just created from example: **run profile setup first** (ask 
 
 If the user provides specific job URLs that are NOT in the scored data (e.g., from company
 career pages not covered by JBA like Scotiabank, government job boards, or specific listings
-that weren't picked up), fetch the job description using gstack browse:
+that weren't picked up), use gstack `/browse` to fetch the job description.
 
+**First, check if gstack is available:**
 ```bash
-# Setup browse
 BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
 B=$(echo "$BROWSE_OUTPUT" | head -1)
+if [ -z "$B" ]; then
+  echo "BROWSE_NOT_AVAILABLE"
+fi
+```
 
-# For each user-provided URL:
+**If gstack is available:**
+```bash
 $B goto <job_url>
 $B text
 ```
+Validate the output contains job description content before using it.
 
-If browse is not available: ask the user to paste the job description.
+**If gstack is NOT available:** Use AskUserQuestion:
+1. **"Install gstack now"** — Show:
+   `git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup`
+   Then tell them to add a "gstack" section to CLAUDE.md that says to use /browse for all
+   web browsing, never use mcp__claude-in-chrome__* tools, and lists available skills:
+   /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,
+   /design-consultation, /review, /ship, /browse, /qa, /qa-only,
+   /design-review, /setup-browser-cookies, /retro, /debug, /document-release.
+   Then ask the user if they also want to add gstack to the current project so teammates get it.
+   After installing, retry the browse.
+2. **"I'll paste the job description"** — Accept pasted text.
+3. **"Skip this job"** — Continue without it.
 
 Add these manually-fetched jobs to the candidate list alongside P1/P2 jobs from scored data.
 Classify them using the same bucket criteria. Mark them in the output:

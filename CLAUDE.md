@@ -31,7 +31,7 @@ python -m src.report [--date YYYY-MM-DD] [--top N]
 python -m src.site_generator [--date YYYY-MM-DD]  # Generate static HTML dashboard
 
 # Tests
-pytest tests/unit/           # Fast (<1s), 79 tests, no network
+pytest tests/unit/           # Fast (<1s), 145 tests, no network
 pytest tests/integration/    # Slow, hits real APIs
 pytest                       # All tests
 ```
@@ -94,6 +94,30 @@ the project root and follow its instructions exactly:**
 ```bash
 git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder 2>/dev/null || (cd ~/job-finder && git pull); cd ~/job-finder && ./setup
 ```
+
+### gstack (Web Browsing & Extended Skills)
+
+JobHunter uses [gstack](https://github.com/garrytan/gstack)'s `/browse` skill to fetch job descriptions from company career pages not in JBA (e.g., Scotiabank, Google, government sites). **Always use `/browse` for web browsing — never use `mcp__claude-in-chrome__*` tools.**
+
+**Install gstack** (if not already installed):
+```bash
+git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
+```
+Then add a `gstack` section to your project or global `CLAUDE.md` that says to use the `/browse` skill from gstack for all web browsing.
+
+**Available gstack skills:** `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/review`, `/ship`, `/browse`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/retro`, `/debug`, `/document-release`.
+
+**Browse usage in JobHunter:**
+```bash
+# Setup browse (once per session)
+BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
+B=$(echo "$BROWSE_OUTPUT" | head -1)
+
+# Fetch a job description
+$B goto <careers_page_url>
+$B text
+```
+Use browse when: a company isn't in JBA, user provides a direct job URL, or user mentions a specific non-JBA company (Google, Apple, Amazon, Scotiabank, etc.).
 
 ## Critical Rules
 

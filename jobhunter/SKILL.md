@@ -33,6 +33,7 @@ trend tracking, frame gaps as leveling-up opportunities not failures.
 - Missing `.venv` — create it and install deps automatically
 - Missing `config/profile.yaml` — copy the example and run profile setup
 - Missing `RESUME.md` when a PDF resume exists in the directory (use the PDF)
+- Missing gstack — warn and continue, pipeline works without it (browse is a bonus for non-JBA jobs)
 - Stale cached data (use it, note its age)
 - Some companies failing to live-scrape (report them, continue with what succeeded)
 - Warnings in scraper output (log them, don't surface to user)
@@ -88,6 +89,20 @@ else
   echo "   → Add your resume before running the pipeline."
   echo "   → Options: copy a PDF here, or create RESUME.md from the example:"
   echo "     cp RESUME.md.example RESUME.md && open RESUME.md"
+fi
+
+# 4. gstack/browse check — ADVISORY (not blocking).
+#    Browse lets us fetch job descriptions from company career pages not in JBA.
+if [ -d "$HOME/.claude/skills/gstack" ] && [ -f "$HOME/.claude/skills/gstack/browse/bin/find-browse" ]; then
+  echo "✅ gstack/browse available (can fetch non-JBA job descriptions)"
+else
+  echo "⚠️  gstack not installed — browse (fetching job descriptions from career pages) unavailable"
+  echo "   To install: git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup"
+  echo "   Then add a 'gstack' section to CLAUDE.md that says to use /browse for all web browsing,"
+  echo "   never use mcp__claude-in-chrome__* tools, and lists available skills:"
+  echo "   /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,"
+  echo "   /design-consultation, /review, /ship, /browse, /qa, /qa-only,"
+  echo "   /design-review, /setup-browser-cookies, /retro, /debug, /document-release"
 fi
 ```
 
@@ -194,7 +209,32 @@ grep -il "<company>" data/seed/greenhouse.json data/seed/lever.json \
 | OpenAI | Greenhouse ✅ | JBA download + live scrape (`openai`) |
 | Google, Apple, Amazon, Microsoft, Meta | ❌ not in JBA | LinkedIn / careers page |
 
-**If not in JBA:** offer LinkedIn scrape or direct careers page browse via G-Stack.
+**If not in JBA:** Use AskUserQuestion to offer browsing their careers page:
+- **"Yes, browse their careers page"** — Use gstack `/browse` to fetch their jobs:
+  ```bash
+  BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
+  B=$(echo "$BROWSE_OUTPUT" | head -1)
+  if [ -n "$B" ]; then
+    $B goto <careers_page_url>
+    $B text
+  fi
+  ```
+  After fetching, present jobs alongside scored results as 📌 Manual additions.
+- **"No, skip"** — Continue with JBA results only.
+
+**If gstack is not installed and user wants to browse:** Show the install command:
+```
+To browse career pages, install gstack:
+  git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
+Then add a "gstack" section to CLAUDE.md that says to use /browse for all web browsing,
+never use mcp__claude-in-chrome__* tools, and lists available skills:
+/office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,
+/design-consultation, /review, /ship, /browse, /qa, /qa-only,
+/design-review, /setup-browser-cookies, /retro, /debug, /document-release.
+Then ask the user if they also want to add gstack to the current project so teammates get it.
+```
+After user installs, retry the browse.
+
 **If >2,000 jobs at one company:** verify it's not a staffing farm before including.
 
 ---
@@ -265,19 +305,38 @@ python -m src.matcher && python -m src.report
 
 If the user provides specific job URLs that are NOT in the scored results (e.g., jobs from
 company career pages not covered by JBA like Scotiabank, or specific listings that weren't
-picked up), use gstack browse to fetch the job description:
+picked up), use gstack `/browse` to fetch the job description.
 
+**First, check if gstack is available:**
 ```bash
-# Setup browse (one-time)
 BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
 B=$(echo "$BROWSE_OUTPUT" | head -1)
+if [ -z "$B" ]; then
+  echo "BROWSE_NOT_AVAILABLE"
+fi
+```
 
-# Fetch the job description
+**If gstack is available — fetch the job description:**
+```bash
 $B goto <job_url>
 $B text
 ```
+Validate the output contains job description content (title, requirements, responsibilities).
+If the page returned an error or login wall, tell the user and ask them to paste the JD instead.
 
-If browse is not available, ask the user to paste the job description.
+**If gstack is NOT available — ask the user to install it or paste the JD:**
+Use AskUserQuestion with these options:
+1. **"Install gstack now"** — Show the install command:
+   `git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup`
+   Then tell them to add a "gstack" section to CLAUDE.md that says to use /browse for all
+   web browsing, never use mcp__claude-in-chrome__* tools, and lists available skills:
+   /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,
+   /design-consultation, /review, /ship, /browse, /qa, /qa-only,
+   /design-review, /setup-browser-cookies, /retro, /debug, /document-release.
+   Then ask the user if they also want to add gstack to the current project so teammates get it.
+   After installing, retry the browse.
+2. **"I'll paste the job description"** — Accept pasted text and continue.
+3. **"Skip this job"** — Continue without it.
 
 After fetching, present the job alongside the scored results with a note:
 ```

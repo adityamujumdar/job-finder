@@ -72,6 +72,19 @@ today = __import__('datetime').date.today().isoformat()
 path = pathlib.Path(f'data/scored/{today}.json')
 print('✅ Scored data found' if path.exists() else '⚙️  No scored data — will run pipeline if job ID lookup is needed')
 " 2>/dev/null
+
+# 4. gstack/browse check — ADVISORY (not blocking).
+if [ -d "$HOME/.claude/skills/gstack" ] && [ -f "$HOME/.claude/skills/gstack/browse/bin/find-browse" ]; then
+  echo "✅ gstack/browse available (can fetch job descriptions from any URL)"
+else
+  echo "⚠️  gstack not installed — browse unavailable (will need to paste job descriptions manually)"
+  echo "   To install: git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup"
+  echo "   Then add a 'gstack' section to CLAUDE.md that says to use /browse for all web browsing,"
+  echo "   never use mcp__claude-in-chrome__* tools, and lists available skills:"
+  echo "   /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,"
+  echo "   /design-consultation, /review, /ship, /browse, /qa, /qa-only,"
+  echo "   /design-review, /setup-browser-cookies, /retro, /debug, /document-release"
+fi
 ```
 
 **If RESUME.md is missing:** Ask the user to provide their resume. Use AskUserQuestion with these options:
@@ -138,21 +151,37 @@ for j in hits[:5]:
 
 ## Step 2 — Get the Full Job Description
 
-**Using G-Stack browser (preferred):**
+**Using gstack `/browse` (preferred):**
 
+**First, check if gstack is available:**
 ```bash
-# Setup browse (run once per session)
 BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
 B=$(echo "$BROWSE_OUTPUT" | head -1)
 if [ -z "$B" ]; then echo "BROWSE_NOT_AVAILABLE"; fi
+```
 
-# Fetch the job description
+**If gstack is available — fetch the job description:**
+```bash
 $B goto <job_url>
 $B text
 ```
 
 This works for ANY job URL — including companies not in JBA (Scotiabank, government sites,
 LinkedIn listings, etc.). The job does not need to be in the scored dataset.
+Validate the output contains job description content (title, requirements, responsibilities).
+If the page returned an error or login wall, tell the user and ask them to paste the JD instead.
+
+**If gstack is NOT available:** Use AskUserQuestion:
+1. **"Install gstack now"** — Show:
+   `git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup`
+   Then tell them to add a "gstack" section to CLAUDE.md that says to use /browse for all
+   web browsing, never use mcp__claude-in-chrome__* tools, and lists available skills:
+   /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,
+   /design-consultation, /review, /ship, /browse, /qa, /qa-only,
+   /design-review, /setup-browser-cookies, /retro, /debug, /document-release.
+   Then ask the user if they also want to add gstack to the current project so teammates get it.
+   After installing, retry the browse.
+2. **"I'll paste the job description"** — Accept pasted text and continue.
 
 **For Greenhouse API jobs** (Stripe, Anthropic, etc.), you can also fetch structured data:
 ```bash
@@ -166,7 +195,7 @@ print(re.sub(r'\n{3,}', '\n\n', text).strip())
 "
 ```
 
-**If G-Stack is unavailable:** Ask the user to paste the job description directly.
+**If gstack is unavailable and the user didn't install it above:** Ask the user to paste the job description directly.
 
 **Read the ENTIRE description.** Do not skim. Every bullet point and requirement section
 matters — the keywords in "Nice to Have" are real signals even if not required.
