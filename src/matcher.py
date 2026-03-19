@@ -15,8 +15,8 @@ from pathlib import Path
 
 from src.config import (
     load_profile, profile_hash, today, ensure_dirs,
-    JOBS_DIR, SCORED_DIR, WEIGHTS, PRIORITY_TIERS, PHOENIX_METRO, STALE_DAYS,
-    COMPANY_BLOCKLIST,
+    JOBS_DIR, SCORED_DIR, WEIGHTS, PRIORITY_TIERS, STALE_DAYS,
+    COMPANY_BLOCKLIST, SWE_FAMILY_WORDS,
 )
 
 log = logging.getLogger(__name__)
@@ -24,14 +24,6 @@ log = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-# Titles containing these words are a DIFFERENT job family — penalize hard
-SWE_FAMILY_WORDS = {
-    "software", "backend", "frontend", "fullstack", "full-stack", "devops",
-    "sre", "ios", "android", "mobile", "web", "react", "node", "java",
-    "ruby", "golang", "rust", "php", "net", "dotnet", "embedded",
-    "backline", "infrastructure", "platform", "reliability", "security",
-    "network", "systems", "cloud", "kubernetes", "ml",
-}
 IRRELEVANT_WORDS = {
     "center", "controls", "mechanical", "electrical", "civil", "chemical",
     "facilities", "hvac", "nurse", "nursing", "physician", "clinical",
@@ -116,15 +108,28 @@ def score_title_match(job_title: str, profile: dict) -> float:
     if not title_tokens:
         return 0.0
 
-    # Check for negative signals — SWE family or irrelevant job families
-    has_swe_words = bool(title_tokens & SWE_FAMILY_WORDS)
+    # Check exclude_title_patterns — user-configured negative patterns
+    # (e.g., "cloud platform", "devops", "sre") → cap at 0.15
+    for pattern in profile.get("_exclude_title_patterns_lower", []):
+        if pattern in title_lower:
+            return 0.15
+
+    # Check for negative signals — dynamic penalty words (profile-aware)
+    # For SWE profiles, SWE words are removed from the penalty set.
+    # For BI profiles, SWE words remain as penalties.
+    penalty_words = profile.get("_title_penalty_words", SWE_FAMILY_WORDS)
+    has_swe_words = bool(title_tokens & penalty_words)
     has_irrelevant = bool(title_tokens & IRRELEVANT_WORDS)
 
     # Check if title starts with a SWE role (e.g., "Software Engineer ... Data Engineering")
-    title_starts_swe = bool(re.match(
-        r'^(sr\.?|senior|staff|principal|lead)?\s*(software|backend|frontend|fullstack|platform|infrastructure|devops|sre|site reliability)\s+(engineer|developer)',
-        title_lower
-    ))
+    # Skip this check if the user's target roles include SWE-family titles
+    if penalty_words:
+        title_starts_swe = bool(re.match(
+            r'^(sr\.?|senior|staff|principal|lead)?\s*(software|backend|frontend|fullstack|platform|infrastructure|devops|sre|site reliability)\s+(engineer|developer)',
+            title_lower
+        ))
+    else:
+        title_starts_swe = False
 
     best = 0.0
 
@@ -135,9 +140,14 @@ def score_title_match(job_title: str, profile: dict) -> float:
 
         # Strategy 1: Phrase match (contiguous words)
         if _phrase_in_title(role, job_title):
-            # If the title STARTS with a SWE role, this is an SWE job that
-            # happens to mention data/analytics — penalize heavily
-            if title_starts_swe:
+            # If the title STARTS with a SWE role AND the matched role is NOT
+            # itself SWE-family, this is a cross-family false positive
+            # (e.g., "Software Engineer - Data Analytics" matched via "Data Analyst")
+            # But if the role IS SWE-family (e.g., "Backend Engineer"), no penalty.
+            role_is_swe = bool(role_tokens & {"software", "backend", "frontend",
+                "fullstack", "platform", "infrastructure", "devops", "sre",
+                "systems", "engineer", "developer"})
+            if title_starts_swe and not role_is_swe:
                 best = max(best, 0.35)
                 continue
 
@@ -202,8 +212,9 @@ def score_location_match(job_location: str, profile: dict) -> float:
     if profile_city and profile_city in loc_lower:
         return 1.0
 
-    # Phoenix metro match
-    if any(metro_city in loc_lower for metro_city in PHOENIX_METRO):
+    # Metro area match (profile-configured, replaces hardcoded PHOENIX_METRO)
+    metro_cities = profile.get("_metro_cities_lower", set())
+    if metro_cities and any(metro_city in loc_lower for metro_city in metro_cities):
         return 0.95
 
     # Same state (word boundary to avoid "az" matching inside longer words)

@@ -113,7 +113,7 @@ def job_tier_classification(title: str) -> str:
         r"\b(?:i|1)\b(?!\s*-|\d)": -15,
         r"\b(?:paralegal|clerk)\b": -15,
         r"\b(?:resident|clinical\s*fellow)\b": -15,
-        r"\b(?:aide|assistant|tech)\b": -10,
+        r"\b(?:aide|assistant)\b": -10,  # LOCAL PATCH: removed "tech" — matches legitimate SWE titles (Tech Lead, etc.)
         r"\bintern(?:ship)?\b": -100,
     }
 

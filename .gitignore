@@ -19,7 +19,11 @@ tests/fixtures/
 # Create your own: cp RESUME.md.example RESUME.md  (then fill in your info)
 RESUME.md
 *.tex
+*.pdf
 resumes/
+
+# Profile backups
+config/*.bak.*
 
 # Generated dashboard — rebuilt by GitHub Actions on every deploy.
 # site/index.html is tracked (placeholder page for fresh clones).

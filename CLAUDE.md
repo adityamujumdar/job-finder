@@ -51,7 +51,13 @@ pytest                       # All tests
 
 ## Scoring Weights
 
-title_match (0.35), location_match (0.20), level_match (0.15), keyword_boost (0.15), company_preference (0.10), recency (0.05). Priority tiers: P1 (85-100), P2 (70-84), P3 (50-69), P4 (<50). Missing fields get safe defaults (not crashes).
+title_match (0.35), location_match (0.20), level_match (0.15), keyword_boost (0.15), company_preference (0.15), recency (0.00). Priority tiers: P1 (85-100), P2 (70-84), P3 (50-69), P4 (<50). Missing fields get safe defaults (not crashes).
+
+## Profile Features
+
+- **`exclude_title_patterns`** — list of title substrings to penalize (e.g., "cloud platform", "devops"). Matching jobs get title_match capped at 0.15 (appear in P3/P4, never P1/P2). Suggested data-driven by `/jobhunter` after pipeline run.
+- **`metro_cities`** — list of cities in the user's metro area (e.g., Mississauga, Brampton for Toronto). Gets 0.95 location score. Replaces hardcoded PHOENIX_METRO.
+- **Dynamic title penalty words** — `SWE_FAMILY_WORDS` (backend, software, platform, etc.) are automatically removed from the penalty set when they appear in the user's `target_roles`. A Backend SWE profile won't penalize "Software Engineer" titles; a BI profile will.
 
 ## Measured Performance (2026-03-15)
 

@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import re
 import yaml
 from datetime import datetime, date
 from pathlib import Path
@@ -31,8 +32,8 @@ WEIGHTS = {
     "location_match": 0.20,
     "level_match": 0.15,
     "keyword_boost": 0.15,
-    "company_preference": 0.10,
-    "recency": 0.05,
+    "company_preference": 0.15,
+    "recency": 0.00,
 }
 
 # Priority tier thresholds
@@ -43,11 +44,14 @@ PRIORITY_TIERS = {
     "P4": (0, 49.999),
 }
 
-# Phoenix metro area cities for location matching
-PHOENIX_METRO = {
-    "phoenix", "tempe", "scottsdale", "mesa", "chandler", "gilbert",
-    "glendale", "peoria", "surprise", "avondale", "goodyear", "buckeye",
-    "queen creek", "maricopa", "fountain hills", "cave creek", "carefree",
+# Titles containing these words are a DIFFERENT job family — penalize hard.
+# Moved here from matcher.py to avoid circular import (config ← matcher ← config).
+SWE_FAMILY_WORDS = {
+    "software", "backend", "frontend", "fullstack", "full-stack", "devops",
+    "sre", "ios", "android", "mobile", "web", "react", "node", "java",
+    "ruby", "golang", "rust", "php", "net", "dotnet", "embedded",
+    "backline", "infrastructure", "platform", "reliability", "security",
+    "network", "systems", "cloud", "kubernetes", "ml",
 }
 
 # Company blocklist — staffing farms and aggregators that pollute results
@@ -69,35 +73,12 @@ JBA_DATA_PATH = "data"
 
 
 # ── Profile Loading ───────────────────────────────────────────────────────────
-def load_profile(path: str | Path | None = None) -> dict:
-    """Load and validate user profile from YAML.
+def _normalize_profile(profile: dict) -> dict:
+    """Apply defaults and build computed fields for a profile dict.
 
-    Args:
-        path: Path to profile YAML. Defaults to config/profile.yaml.
-
-    Returns:
-        Validated profile dict.
-
-    Raises:
-        FileNotFoundError: If profile doesn't exist.
-        ValueError: If required fields are missing.
+    Shared by load_profile() (file-based) and load_profile(raw=...) (dict-based).
+    Tests use raw= to avoid file I/O while sharing the same normalization logic.
     """
-    if path is None:
-        path = CONFIG_DIR / "profile.yaml"
-    path = Path(path)
-
-    if not path.exists():
-        raise FileNotFoundError(f"Profile not found: {path}")
-
-    with open(path) as f:
-        profile = yaml.safe_load(f)
-
-    # Validate required fields
-    required = ["name", "location", "target_roles", "skills"]
-    missing = [f for f in required if f not in profile or not profile[f]]
-    if missing:
-        raise ValueError(f"Profile missing required fields: {missing}")
-
     # Defaults for optional fields
     profile.setdefault("remote_ok", True)
     profile.setdefault("willing_to_relocate", False)
@@ -109,6 +90,8 @@ def load_profile(path: str | Path | None = None) -> dict:
     profile.setdefault("preferred_companies", {})
     profile.setdefault("exclude_recruiters", True)
     profile.setdefault("exclude_staffing", True)
+    profile.setdefault("exclude_title_patterns", [])
+    profile.setdefault("metro_cities", [])
 
     # Normalize text fields for matching
     profile["_target_roles_lower"] = [r.lower() for r in profile["target_roles"]]
@@ -130,7 +113,62 @@ def load_profile(path: str | Path | None = None) -> dict:
             # Workday slugs have pipes — use first part as identifier
             profile["_preferred_slugs"].add(slug.split("|")[0].lower())
 
+    # Normalize exclude_title_patterns for O(n) matching
+    profile["_exclude_title_patterns_lower"] = [
+        p.lower() for p in profile.get("exclude_title_patterns", [])
+    ]
+
+    # Normalize metro cities for location matching
+    profile["_metro_cities_lower"] = {
+        c.strip().lower() for c in profile.get("metro_cities", [])
+    }
+
+    # Build dynamic title penalty words — SWE_FAMILY_WORDS minus words in target roles.
+    # For a Backend SWE profile, "backend", "software", "platform" are removed from
+    # the penalty set. For a BI profile, they stay (SWE titles are false positives).
+    target_words = set()
+    for role in profile["_target_roles_lower"]:
+        target_words.update(re.findall(r'[a-z0-9]+', role))
+    profile["_title_penalty_words"] = SWE_FAMILY_WORDS - target_words
+
     return profile
+
+
+def load_profile(path: str | Path | None = None, *, raw: dict | None = None) -> dict:
+    """Load and validate user profile from YAML file or raw dict.
+
+    Args:
+        path: Path to profile YAML. Defaults to config/profile.yaml.
+        raw: Pre-loaded profile dict (skips file I/O). Used by tests.
+             If both path and raw are provided, raw takes precedence.
+
+    Returns:
+        Validated and normalized profile dict.
+
+    Raises:
+        FileNotFoundError: If profile file doesn't exist (file mode only).
+        ValueError: If required fields are missing.
+    """
+    if raw is not None:
+        profile = dict(raw)  # shallow copy to avoid mutating caller's dict
+    else:
+        if path is None:
+            path = CONFIG_DIR / "profile.yaml"
+        path = Path(path)
+
+        if not path.exists():
+            raise FileNotFoundError(f"Profile not found: {path}")
+
+        with open(path) as f:
+            profile = yaml.safe_load(f)
+
+    # Validate required fields
+    required = ["name", "location", "target_roles", "skills"]
+    missing = [f for f in required if f not in profile or not profile[f]]
+    if missing:
+        raise ValueError(f"Profile missing required fields: {missing}")
+
+    return _normalize_profile(profile)
 
 
 def profile_hash(path: "str | Path | None" = None) -> str:

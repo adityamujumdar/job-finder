@@ -141,8 +141,29 @@ for j in hits[:5]:
 **Using G-Stack browser (preferred):**
 
 ```bash
+# Setup browse (run once per session)
+BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
+B=$(echo "$BROWSE_OUTPUT" | head -1)
+if [ -z "$B" ]; then echo "BROWSE_NOT_AVAILABLE"; fi
+
+# Fetch the job description
 $B goto <job_url>
 $B text
+```
+
+This works for ANY job URL — including companies not in JBA (Scotiabank, government sites,
+LinkedIn listings, etc.). The job does not need to be in the scored dataset.
+
+**For Greenhouse API jobs** (Stripe, Anthropic, etc.), you can also fetch structured data:
+```bash
+python3 -c "
+import urllib.request, json, re, html
+url = 'https://boards-api.greenhouse.io/v1/boards/<company>/jobs/<job_id>'
+data = json.loads(urllib.request.urlopen(url, timeout=15).read())
+text = html.unescape(data.get('content',''))
+text = re.sub(r'<[^>]+>', '\n', text)
+print(re.sub(r'\n{3,}', '\n\n', text).strip())
+"
 ```
 
 **If G-Stack is unavailable:** Ask the user to paste the job description directly.

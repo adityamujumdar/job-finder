@@ -69,5 +69,21 @@ preferred_companies:
   # Netflix is on Workday, NOT Lever. Most Big Tech (Google, Apple, Meta) is also Workday.
   # ashby: just the slug from jobs.ashby.io/SLUG
 
+# Title patterns to penalize (capped at 0.15 title_match score).
+# Jobs matching these patterns appear in P3/P4, never P1/P2.
+# Use for roles that share keywords but are a different function.
+# Example: a Backend SWE might exclude "cloud platform", "devops", "sre".
+exclude_title_patterns: []
+  # - "cloud platform"
+  # - "devops"
+  # - "site reliability"
+
+# Cities in your metro area — get 0.95 location score (vs 1.0 for exact city).
+# Replaces the hardcoded Phoenix metro area. Leave empty if not applicable.
+metro_cities: []
+  # - "Oakland"
+  # - "San Jose"
+  # - "Palo Alto"
+
 exclude_recruiters: true    # Filter out staffing/recruiting companies
 exclude_staffing: true      # Filter out known staffing farms (jobgether, etc.)

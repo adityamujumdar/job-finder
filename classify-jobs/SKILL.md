@@ -90,6 +90,33 @@ If profile.yaml was just created from example: **run profile setup first** (ask 
 
 ---
 
+## Step 0b — Non-JBA Job Support (Browse)
+
+If the user provides specific job URLs that are NOT in the scored data (e.g., from company
+career pages not covered by JBA like Scotiabank, government job boards, or specific listings
+that weren't picked up), fetch the job description using gstack browse:
+
+```bash
+# Setup browse
+BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
+B=$(echo "$BROWSE_OUTPUT" | head -1)
+
+# For each user-provided URL:
+$B goto <job_url>
+$B text
+```
+
+If browse is not available: ask the user to paste the job description.
+
+Add these manually-fetched jobs to the candidate list alongside P1/P2 jobs from scored data.
+Classify them using the same bucket criteria. Mark them in the output:
+
+```
+📌 (Manual — user-provided URL, not in JBA scored data)
+```
+
+---
+
 ## Step 1 — Load Candidates
 
 Load P1 jobs. If fewer than 5 P1 jobs, also include the top P2 jobs (up to 30 total):

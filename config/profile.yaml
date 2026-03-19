@@ -1,78 +1,57 @@
-name: "Aditya Mujumdar"
-location: "Chandler, AZ"
+# JobHunter AI — User Profile (demo)
+#
+# Customize this file with YOUR target roles, skills, and location.
+# Every field here affects how 502K+ jobs are scored and ranked.
+# After editing, re-run the pipeline: /jobhunter or python -m src.matcher
+
+name: "Demo User"
+location: "San Francisco, CA"
 willing_to_relocate: true
 relocation_cities:
-  - "San Francisco, CA"
-  - "Seattle, WA"
   - "New York, NY"
+  - "Seattle, WA"
   - "Austin, TX"
-  - "Denver, CO"
 remote_ok: true
 
 years_experience: 5
 target_level: "mid"
 exclude_levels: ["intern"]
 
+# ⭐ MOST IMPORTANT — drives 35% of your score (title_match).
+# Each role is matched as a PHRASE against job titles.
 target_roles:
-  - "Business Intelligence"
-  - "BI Developer"
-  - "BI Engineer"
-  - "BI Analyst"
-  - "Data Analyst"
-  - "Business Analyst"
-  - "Analytics Engineer"
+  - "Software Engineer"
+  - "Backend Engineer"
   - "Data Engineer"
-  - "Analytics Manager"
-  - "Business Intelligence Manager"
 
 skills:
   - Python
   - SQL
-  - Tableau
-  - Power BI
-  - Azure
-  - R
-  - VBA
-  - Oracle SQL
-  - SPSS
-  - Google Analytics
-  - Adobe Analytics
-  - Kibana
-  - ETL
-  - Machine Learning
-  - Financial Modeling
+  - Go
+  - PostgreSQL
+  - AWS
 
 boost_keywords:
-  - "analytics"
-  - "intelligence"
-  - "reporting"
-  - "dashboard"
-  - "visualization"
+  - "backend"
+  - "distributed"
   - "data"
-  - "insights"
-  - "forecast"
+  - "infrastructure"
 
 preferred_companies:
   greenhouse:
     - "anthropic"
-    - "figma"
     - "stripe"
-    - "notion"
-    - "databricks"
-    - "snowflakecomputing"
-    - "plaid"
-    - "brex"
-    - "ramp"
-    - "relativityspace"
-  lever:
-    - "twitch"
-  workday:
-    - "nvidia|wd5|NVIDIAExternalCareerSite"
-    - "intel|wd1|External"
-    - "netflix|wd1|netflix"
-  ashby:
-    - "1password"
-    - "linear"
+  lever: []
+  ashby: []
+
+# Title patterns to penalize (capped at 0.15 title_match score).
+# Use for roles that share keywords but are a different function.
+# Example: a Backend SWE might exclude "cloud platform", "devops", "sre".
+exclude_title_patterns: []
+
+# Cities in your metro area — get 0.95 location score (vs 1.0 for exact city).
+# Example for SF Bay Area: ["Oakland", "San Jose", "Palo Alto", "Mountain View"]
+metro_cities: []
 
 exclude_recruiters: true
 exclude_staffing: true

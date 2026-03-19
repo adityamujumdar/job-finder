@@ -25,13 +25,14 @@ trend tracking, frame gaps as leveling-up opportunities not failures.
 ---
 
 ## Only stop for:
+- No resume found (no RESUME.md and no .pdf in project root) — ask user to add one
 - Network is down and JBA download fails after retry
 - Scored data is 0 jobs (something went wrong — show the error)
 
 ## Never stop for:
 - Missing `.venv` — create it and install deps automatically
 - Missing `config/profile.yaml` — copy the example and run profile setup
-- Missing `RESUME.md` — continue without it (pipeline works fine; /tailor-resume will ask for it when needed)
+- Missing `RESUME.md` when a PDF resume exists in the directory (use the PDF)
 - Stale cached data (use it, note its age)
 - Some companies failing to live-scrape (report them, continue with what succeeded)
 - Warnings in scraper output (log them, don't surface to user)
@@ -72,8 +73,22 @@ else
   echo "✅ profile.yaml found"
 fi
 
-# 3. Resume check (not blocking — pipeline works without it)
-[ -f "RESUME.md" ] && echo "✅ RESUME.md found" || echo "⚠️  No RESUME.md yet — /tailor-resume will ask for your resume when needed"
+# 3. Resume check — BLOCKING. Pipeline requires a resume on file.
+#    Checks for RESUME.md or any PDF in the project root.
+RESUME_FOUND=false
+if [ -f "RESUME.md" ]; then
+  echo "✅ RESUME.md found"
+  RESUME_FOUND=true
+elif ls *.pdf 1>/dev/null 2>&1; then
+  PDF_NAME=$(ls *.pdf | head -1)
+  echo "✅ Resume PDF found: $PDF_NAME"
+  RESUME_FOUND=true
+else
+  echo "❌ No resume found (need RESUME.md or a .pdf in this directory)"
+  echo "   → Add your resume before running the pipeline."
+  echo "   → Options: copy a PDF here, or create RESUME.md from the example:"
+  echo "     cp RESUME.md.example RESUME.md && open RESUME.md"
+fi
 ```
 
 ```bash
@@ -97,7 +112,12 @@ else:
 
 If profile.yaml was just created from example: proceed to Step 1 (Profile Setup) to customize it.
 If profile staleness check shows ⚠️: proceed with the pipeline — the matcher will rescore against the current profile.
-**Never stop. Never tell the user to "run X first." Fix it and keep going.**
+**If no resume was found (RESUME_FOUND=false):** Stop and use AskUserQuestion to ask the user to add their resume. Offer these options:
+1. **"Point me to your resume file"** — User gives a path. Read and convert to RESUME.md.
+2. **"I'll paste it here"** — User pastes text. Write to RESUME.md.
+3. **"I have a PDF I'll drop in this folder"** — Tell them to add a .pdf and re-run.
+**Do NOT proceed with the pipeline until a resume is present.**
+**For all other issues: never stop. Never tell the user to "run X first." Fix it and keep going.**
 
 ---
 
@@ -205,6 +225,68 @@ Then mention:
 
 End with an offer:
 > "Want me to classify these and rank which to apply to first? → `/classify-jobs`"
+
+---
+
+## Step 5b — False Positive Detection & Negative Pattern Suggestions
+
+After showing results, scan the P1 list for clusters of roles that look like false positives.
+A false positive cluster is 3+ P1 jobs sharing a title pattern that doesn't match the user's
+actual target function (e.g., "Cloud Platform Engineer" appearing in a Backend SWE search).
+
+```python
+# Pseudocode for cluster detection:
+# 1. Group P1 jobs by 2-word title prefix (e.g., "Cloud Platform", "DevOps Engineer")
+# 2. Any group with 3+ jobs where the prefix is NOT in target_roles → suggest exclusion
+```
+
+If false positive clusters are found, offer to add them as exclude_title_patterns:
+
+```
+⚠️  I noticed 6 P1 jobs are "Cloud Platform Engineer" roles — these look like
+infrastructure/DevOps, not backend SWE. Want me to exclude these from future runs?
+
+→ This would add `exclude_title_patterns: ["cloud platform"]` to your profile.
+```
+
+Use AskUserQuestion with options:
+- **"Yes, exclude those"** — Add to profile.yaml `exclude_title_patterns` and rescore
+- **"No, keep them"** — Leave as-is
+- **"Let me pick which to exclude"** — Show the list and let user choose
+
+After updating, re-run the matcher and show updated counts:
+```bash
+python -m src.matcher && python -m src.report
+```
+
+---
+
+## Step 5c — Non-JBA Job Support (Browse)
+
+If the user provides specific job URLs that are NOT in the scored results (e.g., jobs from
+company career pages not covered by JBA like Scotiabank, or specific listings that weren't
+picked up), use gstack browse to fetch the job description:
+
+```bash
+# Setup browse (one-time)
+BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
+B=$(echo "$BROWSE_OUTPUT" | head -1)
+
+# Fetch the job description
+$B goto <job_url>
+$B text
+```
+
+If browse is not available, ask the user to paste the job description.
+
+After fetching, present the job alongside the scored results with a note:
+```
+📌 Manual addition (not in JBA):
+   Backend Software Engineer @ Scotiabank  Toronto · (manual — not scored)
+   URL: https://jobs.scotiabank.com/...
+```
+
+Then offer: "Want me to classify this job or tailor your resume for it? → `/classify-jobs` or `/tailor-resume`"
 
 ---
 
