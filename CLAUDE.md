@@ -31,7 +31,7 @@ python -m src.report [--date YYYY-MM-DD] [--top N]
 python -m src.site_generator [--date YYYY-MM-DD]  # Generate static HTML dashboard
 
 # Tests
-pytest tests/unit/           # Fast (<1s), 145 tests, no network
+pytest tests/unit/           # Fast (<1s), 150 tests, no network
 pytest tests/integration/    # Slow, hits real APIs
 pytest                       # All tests
 ```

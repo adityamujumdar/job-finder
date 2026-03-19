@@ -5,6 +5,8 @@ Score = weighted sum of: title_match, location_match, level_match,
         keyword_boost, company_preference, recency.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re

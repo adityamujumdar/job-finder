@@ -4,6 +4,8 @@ Generates index.html with embedded JSON data, Tailwind CSS, and vanilla JS
 for search, filtering, and sorting. Designed for GitHub Pages deployment.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging

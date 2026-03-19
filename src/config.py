@@ -1,5 +1,7 @@
 """Shared configuration — single source of truth for paths, constants, and profile loading."""
 
+from __future__ import annotations
+
 import hashlib
 import os
 import re
@@ -171,7 +173,7 @@ def load_profile(path: str | Path | None = None, *, raw: dict | None = None) -> 
     return _normalize_profile(profile)
 
 
-def profile_hash(path: "str | Path | None" = None) -> str:
+def profile_hash(path: str | Path | None = None) -> str:
     """8-char sha256 of raw profile.yaml content.
 
     Changes whenever ANY field in profile.yaml changes, signalling that

@@ -30,6 +30,8 @@ Modifications from upstream:
   - Added: fetch_company_jobs() dispatcher
 """
 
+from __future__ import annotations
+
 import json
 import random
 import re

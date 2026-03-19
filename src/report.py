@@ -3,6 +3,8 @@
 Reads scored jobs, generates prioritized CSV and a human-readable summary.
 """
 
+from __future__ import annotations
+
 import csv
 import json
 import logging
