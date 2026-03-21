@@ -353,9 +353,14 @@ def _build_html(*, jobs_json, date_str, p1, p2, p3, new_count, total,
         <button onclick="toggleDropdown('ats')" id="ats-dropdown-btn"
                 class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-600">
           Platform
+          <span id="ats-badge" class="hidden px-1 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold text-[10px]">0</span>
           <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
         <div id="ats-panel" class="hidden absolute left-0 top-full mt-1 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-40">
+          <div class="px-2 py-1 border-b border-gray-100 dark:border-gray-700 flex gap-1">
+            <button onclick="selectAllATS()" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400">All</button>
+            <button onclick="clearAllATS()" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400">None</button>
+          </div>
           <div id="ats-list" class="dropdown-panel p-1"></div>
         </div>
       </div>
@@ -395,10 +400,16 @@ def _build_html(*, jobs_json, date_str, p1, p2, p3, new_count, total,
 const ALL_JOBS = {jobs_json};
 let filtered = [...ALL_JOBS];
 let activePriorities = new Set(["P1", "P2", "P3"]);
-// null = no filter (show all); empty Set = show none; non-empty Set = filter to these
+// Unified filter state model (all three use the same semantics):
+//   null      = no filter active — show all values
+//   Set()     = empty selection — show nothing
+//   Set([...])= partial selection — show only these values
+// Tableau first-click: when null and you click one item → Set([that_item])
+//   i.e. "keep only this" — all others instantly deselect.
+//   To return to all: click "All" button inside the dropdown panel.
 let selectedCompanies = null;
 let selectedLocations = null;
-let selectedATS = new Set();
+let selectedATS = null;        // was new Set() — now unified with null model
 let newOnly = false;
 let PAGE_SIZE = 50;
 let shown = 0;
@@ -511,7 +522,7 @@ function filterJobs() {{
       if (loc.length > 40) loc = loc.substring(0, 40);
       if (!selectedLocations.has(loc)) return false;
     }}
-    if (selectedATS.size > 0 && !selectedATS.has(j.a)) return false;
+    if (selectedATS !== null && !selectedATS.has(j.a)) return false;
     if (q) {{
       const hay = (j.t + ' ' + j.c + ' ' + j.l + ' ' + j.a).toLowerCase();
       return q.split(/\\s+/).every(w => hay.includes(w));
@@ -647,11 +658,11 @@ function updateLocationBadge() {{
   }} else {{ badge.classList.add('hidden'); }}
 }}
 
-// ── ATS dropdown ──
+// ── ATS dropdown — same null-model as Company / Location ──
 function buildATSList() {{
   const list = document.getElementById('ats-list');
   list.innerHTML = atsSorted.map(([name, count]) => {{
-    const checked = selectedATS.size === 0 || selectedATS.has(name);
+    const checked = selectedATS === null || selectedATS.has(name);
     return `<label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-xs">
       <input type="checkbox" ${{checked ? 'checked' : ''}} onchange="toggleATS('${{esc(name)}}')" class="rounded accent-blue-600">
       <span class="flex-1 uppercase text-gray-600 dark:text-gray-400">${{esc(name)}}</span>
@@ -661,43 +672,82 @@ function buildATSList() {{
 }}
 
 function toggleATS(name) {{
-  if (selectedATS.has(name)) {{ selectedATS.delete(name); }}
+  if (selectedATS === null) {{ selectedATS = new Set([name]); }}
+  else if (selectedATS.has(name)) {{ selectedATS.delete(name); }}
   else {{ selectedATS.add(name); }}
-  filterJobs();
+  updateATSBadge(); buildATSList(); filterJobs();
 }}
 
-// ── Active filter chips ──
+function selectAllATS() {{ selectedATS = null; updateATSBadge(); buildATSList(); filterJobs(); }}
+function clearAllATS() {{ selectedATS = new Set(); updateATSBadge(); buildATSList(); filterJobs(); }}
+
+function updateATSBadge() {{
+  const badge = document.getElementById('ats-badge');
+  if (selectedATS !== null && selectedATS.size > 0) {{
+    badge.textContent = selectedATS.size; badge.classList.remove('hidden');
+  }} else {{ badge.classList.add('hidden'); }}
+}}
+
+// ── Active filter chips — data-attributes instead of inline onclick ──
+// Using data-filter + data-value avoids JS-injection for names with quotes/special chars.
 function updateActiveFilters() {{
   const container = document.getElementById('active-filters');
   let chips = [];
+
+  function chip(filterType, value) {{
+    return `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+      ${{esc(value)}}
+      <button class="chip-remove hover:text-red-500" data-filter="${{filterType}}" data-value="${{esc(value)}}">✕</button>
+    </span>`;
+  }}
+
   if (selectedCompanies !== null) {{
-    selectedCompanies.forEach(c => {{
-      chips.push(`<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
-        ${{esc(c)}} <button onclick="selectedCompanies.delete('${{esc(c)}}'); updateCompanyBadge(); buildCompanyList(); filterJobs();" class="hover:text-red-500">✕</button></span>`);
-    }});
+    selectedCompanies.forEach(c => chips.push(chip('company', c)));
   }}
   if (selectedLocations !== null) {{
-    selectedLocations.forEach(l => {{
-      chips.push(`<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
-        ${{esc(l)}} <button onclick="selectedLocations.delete('${{esc(l)}}'); updateLocationBadge(); buildLocationList(); filterJobs();" class="hover:text-red-500">✕</button></span>`);
-    }});
+    selectedLocations.forEach(l => chips.push(chip('location', l)));
+  }}
+  if (selectedATS !== null) {{
+    selectedATS.forEach(a => chips.push(chip('ats', a)));
   }}
   container.innerHTML = chips.join('');
 }}
 
+// Delegated listener for chip removal — handles all filter types, no inline JS needed
+document.addEventListener('click', e => {{
+  const btn = e.target.closest('.chip-remove');
+  if (!btn) return;
+  const filter = btn.dataset.filter;
+  const value = btn.dataset.value;
+  if (filter === 'company' && selectedCompanies) {{
+    selectedCompanies.delete(value);
+    if (selectedCompanies.size === 0) selectedCompanies = null;  // back to "all"
+    updateCompanyBadge(); buildCompanyList();
+  }} else if (filter === 'location' && selectedLocations) {{
+    selectedLocations.delete(value);
+    if (selectedLocations.size === 0) selectedLocations = null;
+    updateLocationBadge(); buildLocationList();
+  }} else if (filter === 'ats' && selectedATS) {{
+    selectedATS.delete(value);
+    if (selectedATS.size === 0) selectedATS = null;
+    updateATSBadge(); buildATSList();
+  }}
+  filterJobs();
+}});
+
 function updateResetBtn() {{
-  const hasFilters = selectedCompanies !== null || selectedLocations !== null || selectedATS.size > 0 || newOnly;
+  const hasFilters = selectedCompanies !== null || selectedLocations !== null || selectedATS !== null || newOnly;
   document.getElementById('reset-btn').classList.toggle('hidden', !hasFilters);
 }}
 
 function resetAllFilters() {{
-  selectedCompanies = null; selectedLocations = null; selectedATS.clear();
+  selectedCompanies = null; selectedLocations = null; selectedATS = null;
   newOnly = false;
   activePriorities = new Set(["P1","P2","P3"]);
   document.getElementById('search').value = '';
   document.getElementById('btn-new').style.opacity = '0.45';
   ['P1','P2','P3'].forEach(p => document.getElementById('btn-' + p).style.opacity = '1');
-  updateCompanyBadge(); updateLocationBadge();
+  updateCompanyBadge(); updateLocationBadge(); updateATSBadge();
   buildCompanyList(); buildLocationList(); buildATSList();
   filterJobs();
 }}
@@ -722,6 +772,7 @@ buildCompanyList();
 buildLocationList();
 buildATSList();
 filterJobs();
+// Note: all 3 dropdowns start in null state (all selected, no badge shown).
 </script>
 </body>
 </html>'''

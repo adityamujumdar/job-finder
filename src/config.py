@@ -29,20 +29,36 @@ SCRAPE_WORKERS = 30
 SCRAPE_WORKERS_BAMBOO = 10
 
 # Scoring weights (must sum to 1.0)
+# ──────────────────────────────────────────────────────────────────────────────
+# title_match:        35% — phrase match of target_roles against job title
+# location_match:     20% — exact city > metro > state > relocation > remote
+# level_match:        15% — exact level > one-off > two-off
+# keyword_boost:      10% — boost_keywords + skills in job title (was 15%)
+# company_preference: 15% — preferred companies in profile (binary 0/1)
+# recency:             5% — freshness: max(0, 1 - days/30) (was dead at 0.00)
+# ──────────────────────────────────────────────────────────────────────────────
+# Max achievable scores (per category of job):
+#   Remote  + non-preferred + perfect title+level+kw: 35+20+15+10+0+5 = 85 → P1
+#   US city + non-preferred + perfect title+level+kw: 35+ 6+15+10+0+5 = 71 → P2
+#   Remote  + preferred     + perfect title+level+kw: 35+20+15+10+15+5= 100→ P1
+#   Toronto + non-preferred + perfect title+level+kw: 35+20+15+10+0+5 = 85 → P1
 WEIGHTS = {
     "title_match": 0.35,
     "location_match": 0.20,
     "level_match": 0.15,
-    "keyword_boost": 0.15,
+    "keyword_boost": 0.10,
     "company_preference": 0.15,
-    "recency": 0.00,
+    "recency": 0.05,
 }
 
 # Priority tier thresholds
+# Lowered from 85/70 → 80/65 to account for the structural scoring ceiling:
+# non-remote, non-preferred jobs max out at ~71 with old thresholds,
+# making P1 unreachable regardless of title/skill quality.
 PRIORITY_TIERS = {
-    "P1": (85, 100),
-    "P2": (70, 84.999),
-    "P3": (50, 69.999),
+    "P1": (80, 100),
+    "P2": (65, 79.999),
+    "P3": (50, 64.999),
     "P4": (0, 49.999),
 }
 
@@ -98,8 +114,15 @@ def _normalize_profile(profile: dict) -> dict:
     # Normalize text fields for matching
     profile["_target_roles_lower"] = [r.lower() for r in profile["target_roles"]]
     profile["_skills_lower"] = [s.lower() for s in profile["skills"]]
-    profile["_boost_keywords_lower"] = [k.lower() for k in profile["boost_keywords"]]
     profile["_location_lower"] = profile["location"].lower()
+
+    # Auto-merge skills into boost_keywords so skill expertise contributes
+    # to keyword_boost scoring without requiring manual duplication.
+    # Skills are added after explicit boost_keywords to preserve user priority.
+    all_boost = list(profile["boost_keywords"]) + [
+        s for s in profile["skills"] if s.lower() not in {k.lower() for k in profile["boost_keywords"]}
+    ]
+    profile["_boost_keywords_lower"] = [k.lower() for k in all_boost]
 
     # Parse relocation cities into (city, state) tuples
     profile["_relocation_parsed"] = []

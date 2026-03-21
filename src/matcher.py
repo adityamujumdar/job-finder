@@ -142,16 +142,24 @@ def score_title_match(job_title: str, profile: dict) -> float:
 
         # Strategy 1: Phrase match (contiguous words)
         if _phrase_in_title(role, job_title):
-            # If the title STARTS with a SWE role AND the matched role is NOT
-            # itself SWE-family, this is a cross-family false positive
-            # (e.g., "Software Engineer - Data Analytics" matched via "Data Analyst")
-            # But if the role IS SWE-family (e.g., "Backend Engineer"), no penalty.
+            # Phrase match succeeded — this is a genuine title match.
+            # Only apply cross-family SWE penalty when the matched role is NOT
+            # SWE-family AND the title starts with a SWE role — this catches
+            # false positives like "Software Engineer - Data Analytics" matching
+            # "Data Analyst". If the user's role IS SWE-family (e.g., "Backend
+            # Engineer", "Senior Software Engineer"), skip the penalty entirely
+            # because phrase match already proves correct family alignment.
             role_is_swe = bool(role_tokens & {"software", "backend", "frontend",
                 "fullstack", "platform", "infrastructure", "devops", "sre",
                 "systems", "engineer", "developer"})
             if title_starts_swe and not role_is_swe:
+                # Cross-family false positive: SWE title matched a non-SWE role
                 best = max(best, 0.35)
                 continue
+            # For SWE roles (the common case): phrase match is sufficient proof,
+            # skip the penalty regardless of title_starts_swe. This prevents
+            # "Senior Software Engineer, Cloud Infrastructure" from being penalized
+            # just because "infrastructure" is in penalty_words.
 
             # Scale by title length — shorter titles = more focused = higher score
             role_word_count = len(role_tokens)
@@ -275,12 +283,20 @@ def score_level_match(job_level: str, profile: dict) -> float:
 
 
 def score_keyword_boost(job_title: str, profile: dict) -> float:
-    """Count boost_keywords found in job title. Normalized: min(matches / 2, 1.0)."""
+    """Count boost_keywords (+ auto-merged skills) found in job title.
+
+    Uses word-boundary matching to prevent short keywords (e.g. "R", "Go")
+    from false-matching inside longer words ("developer", "algorithm").
+    Normalized: min(matches / 2, 1.0).
+    """
     if not job_title:
         return 0.0
 
     title_lower = job_title.lower()
-    matches = sum(1 for kw in profile["_boost_keywords_lower"] if kw in title_lower)
+    matches = sum(
+        1 for kw in profile["_boost_keywords_lower"]
+        if re.search(r'\b' + re.escape(kw) + r'\b', title_lower)
+    )
     return min(matches / 2.0, 1.0)
 
 

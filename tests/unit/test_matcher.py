@@ -254,8 +254,8 @@ class TestRecency:
     def test_missing(self):
         assert score_recency("") == 0.5
 
-    def test_recency_weight_zero(self, bi_profile):
-        """With recency weight = 0.00, recent vs old jobs should score the same."""
+    def test_recency_is_active(self, bi_profile):
+        """Recency weight = 0.05 — fresh jobs score higher than 20-day-old ones."""
         from datetime import datetime, timezone, timedelta
         recent = datetime.now(timezone.utc).isoformat()
         old = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
@@ -264,8 +264,8 @@ class TestRecency:
             "skill_level": "mid", "scraped_at": recent,
         }
         job_old = dict(job_recent, scraped_at=old)
-        # Scores should be identical since recency weight is 0
-        assert score_job(job_recent, bi_profile) == score_job(job_old, bi_profile)
+        # With recency weight = 0.05, a fresh job should outscore a 20-day-old one
+        assert score_job(job_recent, bi_profile) > score_job(job_old, bi_profile)
 
 
 # ── Classify Priority Tests ──────────────────────────────────────────────────

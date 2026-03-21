@@ -301,6 +301,66 @@ python -m src.matcher && python -m src.report
 
 ---
 
+## Step 5b.5 — Industry Browse Discovery (auto-suggest companies to browse)
+
+After presenting JBA results, **proactively identify major employers NOT in JBA** that are
+highly relevant to the user's profile. Run this every time — the user shouldn't have to name
+companies; the system should recommend them.
+
+### How to generate the browse list
+
+Read the user's profile fields and apply these rules:
+
+**Location-based triggers:**
+- If `location` contains `Canada`, `Toronto`, `Vancouver`, `Ottawa`, `Calgary`, `Montreal`:
+  → Add Canadian banks: RBC, TD Bank, BMO, CIBC, Scotiabank, National Bank of Canada
+  → Add Canadian tech: Shopify, Wealthsimple, Lightspeed Commerce, Wattpad, Hootsuite, KOHO, Nuvei, Float
+  → Add big tech Canadian offices: Amazon Canada (amazon.jobs), Google Canada, Atlassian (Sydney/Toronto)
+- If location is US + `relocation_cities` includes Canada → same as above
+- If `location` contains `San Francisco`, `Seattle`, `New York`, `Austin`:
+  → Add: Google, Apple, Amazon, Microsoft, Meta, Lyft, Uber, Airbnb (not in JBA Workday)
+
+**Skills-based triggers (add to list if not already there):**
+- `Java`, `Kotlin`, `Spring Boot` → add fintech/enterprise: Stripe (already in JBA), PayPal, Square, Affirm, Goldman Sachs Engineering
+- `AWS`, `Cloud` → add: Databricks, Snowflake, HashiCorp, Cloudflare
+- `AI`, `ML`, `LLM`, `Bedrock`, `RAG` → add: OpenAI, Cohere, Mistral, Perplexity, Scale AI, Hugging Face
+- `React`, `TypeScript`, `Frontend` → add: Figma, Linear, Notion, Vercel
+
+**Deduplicate** against companies already appearing in the JBA P1/P2 results.
+
+### Present to user
+
+```
+🌐 Companies likely hiring for your profile NOT in today's JBA results:
+
+  🇨🇦 Canadian employers (Toronto):
+    • RBC — rbcjobs.com  [Senior SWE, Java/Kotlin backend]
+    • TD Bank — jobs.td.com  [Senior Developer, cloud platform]
+    • Shopify — shopify.com/careers  [Backend/infra, Go/Ruby but hires Java too]
+    • Wealthsimple — wealthsimple.com/en-ca/jobs  [Fintech, Python/Go backend]
+
+  🔬 Based on your AI/cloud skills:
+    • Databricks — databricks.com/company/careers
+    • Snowflake — careers.snowflake.com
+
+→ Want me to browse any of these? I can fetch job listings and score them against your profile.
+```
+
+Use AskUserQuestion with:
+- A checkboxes-style listing or multi-select asking which companies to browse
+- Option: "Browse all of them"
+- Option: "Skip — JBA results are enough"
+
+For each company the user selects:
+1. Check if gstack is available (see Step 5c)
+2. Browse their careers page and extract job listings
+3. Score each via `score_and_save_browsed()` and append to results
+4. After all browsing is done, re-present updated headline counts
+
+**Cap at 6 companies per run** to keep the pipeline under 5 minutes total.
+
+---
+
 ## Step 5c — Non-JBA Job Support (Browse)
 
 If the user provides specific job URLs that are NOT in the scored results (e.g., jobs from
