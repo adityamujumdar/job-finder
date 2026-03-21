@@ -18,6 +18,7 @@ JBA_DIR = DATA_DIR / "jba"
 JOBS_DIR = DATA_DIR / "jobs"
 SCORED_DIR = DATA_DIR / "scored"
 REPORTS_DIR = DATA_DIR / "reports"
+ENRICHED_DIR = DATA_DIR / "enriched"   # job description enrichment sidecars
 SRC_DIR = PROJECT_ROOT / "src"
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -226,5 +227,5 @@ def today() -> str:
 
 def ensure_dirs():
     """Create all data directories if they don't exist."""
-    for d in [SEED_DIR, JBA_DIR, JOBS_DIR, SCORED_DIR, REPORTS_DIR]:
+    for d in [SEED_DIR, JBA_DIR, JOBS_DIR, SCORED_DIR, REPORTS_DIR, ENRICHED_DIR]:
         d.mkdir(parents=True, exist_ok=True)

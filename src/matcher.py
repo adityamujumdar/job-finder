@@ -17,7 +17,7 @@ from pathlib import Path
 
 from src.config import (
     load_profile, profile_hash, today, ensure_dirs,
-    JOBS_DIR, SCORED_DIR, WEIGHTS, PRIORITY_TIERS, STALE_DAYS,
+    JOBS_DIR, SCORED_DIR, ENRICHED_DIR, WEIGHTS, PRIORITY_TIERS, STALE_DAYS,
     COMPANY_BLOCKLIST, SWE_FAMILY_WORDS,
 )
 
@@ -433,8 +433,15 @@ def run_matcher(date: str | None = None, min_score: float = 0) -> dict:
         job["_priority"] = priority
         scored.append(job)
 
-    # Sort by score descending
-    scored.sort(key=lambda j: j["_score"], reverse=True)
+    # Apply enrichment blending if enriched sidecar exists
+    scored, enriched_count = apply_enrichment(scored, date_str)
+    if enriched_count:
+        log.info("Blended enriched scores for %d jobs", enriched_count)
+        # Re-sort after blending (scores may have changed)
+        scored.sort(key=lambda j: j["_score"], reverse=True)
+    else:
+        # Sort by score descending (no enrichment)
+        scored.sort(key=lambda j: j["_score"], reverse=True)
 
     elapsed = time.time() - t0
 
@@ -486,6 +493,95 @@ def run_matcher(date: str | None = None, min_score: float = 0) -> dict:
              tier_counts["P1"], tier_counts["P2"], tier_counts["P3"], tier_counts["P4"])
 
     return result
+
+
+# ── Enriched Score Blending ───────────────────────────────────────────────────
+#
+# When enriched description data is available (from src/enricher.py), the
+# title-based score is blended with the skill match percentage:
+#
+#   blended = 0.70 × title_score + 0.30 × skill_match_pct
+#
+# This gives description-derived skill match 30% weight. The 70/30 split is
+# conservative — title matching is still the primary signal since descriptions
+# can be noisy and the skill extraction is regex-based (not LLM).
+#
+# Jobs without enrichment (unenriched=True or missing from enriched sidecar)
+# keep their original title-based score — no re-rank, no penalty.
+#
+# Blend diagram:
+#
+#   title_score (0-100)      skill_match_pct (0-100)
+#        │                           │
+#        ▼ ×0.70                     ▼ ×0.30
+#        └─────────────┬─────────────┘
+#                   blended_score
+#                      │
+#               classify_priority()
+#
+ENRICHED_BLEND_WEIGHT = 0.30  # weight of skill_match_pct in blended score
+
+
+def blend_enriched_score(title_score: float, skill_match_pct: int) -> float:
+    """Blend title-based score with description skill match percentage.
+
+    Args:
+        title_score: Original 0-100 score from score_job()
+        skill_match_pct: 0-100 integer from enricher (% required skills matched)
+
+    Returns:
+        Blended score 0-100, rounded to 2 decimal places.
+    """
+    blended = (
+        (1 - ENRICHED_BLEND_WEIGHT) * title_score
+        + ENRICHED_BLEND_WEIGHT * skill_match_pct
+    )
+    return round(blended, 2)
+
+
+def apply_enrichment(scored: list[dict], date_str: str) -> tuple[list[dict], int]:
+    """Re-score enriched jobs with blended scores. Modifies list in-place.
+
+    Reads enriched sidecar (data/enriched/DATE.json) if present.
+    Jobs without enrichment keep their original scores — no penalty.
+
+    Args:
+        scored: List of scored job dicts (with _score, _priority fields).
+        date_str: Date string to find the enriched sidecar.
+
+    Returns:
+        (scored, enriched_count) — same list with blended scores applied.
+    """
+    enriched_path = ENRICHED_DIR / f"{date_str}.json"
+    if not enriched_path.exists():
+        return scored, 0
+
+    try:
+        with open(enriched_path) as f:
+            enriched = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("Could not load enriched data: %s", e)
+        return scored, 0
+
+    enriched_count = 0
+    for job in scored:
+        url = job.get("url", "")
+        enrich = enriched.get(url, {})
+        if not enrich or enrich.get("unenriched") or enrich.get("skill_match_pct") is None:
+            continue  # no enrichment — keep original score
+
+        skill_match_pct = enrich["skill_match_pct"]
+        if skill_match_pct == 0:
+            continue  # no required skills found — don't penalize
+
+        original_score = job["_score"]
+        blended = blend_enriched_score(original_score, skill_match_pct)
+        job["_score"] = blended
+        job["_priority"] = classify_priority(blended)
+        job["_skill_match_pct"] = skill_match_pct
+        enriched_count += 1
+
+    return scored, enriched_count
 
 
 # ── Browsed Job Integration ───────────────────────────────────────────────────
@@ -577,7 +673,39 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="JobHunter matcher — score and rank jobs")
     parser.add_argument("--date", type=str, default=None, help="Date to score (YYYY-MM-DD)")
     parser.add_argument("--min-score", type=float, default=0, help="Minimum score threshold")
+    parser.add_argument(
+        "--reblend", action="store_true",
+        help="Re-apply enrichment blending to existing scored data (no full re-score). "
+             "Run this after src.enricher to blend description skill match into scores."
+    )
     args = parser.parse_args()
 
-    result = run_matcher(date=args.date, min_score=args.min_score)
-    print(f"\n{json.dumps(result, indent=2)}")
+    if args.reblend:
+        # Fast path: just blend enrichment into existing scored data
+        date_str = args.date or today()
+        scored_path = SCORED_DIR / f"{date_str}.json"
+        if not scored_path.exists():
+            print(f"No scored data for {date_str}")
+            sys.exit(1)
+        with open(scored_path) as f:
+            scored = json.load(f)
+        scored, count = apply_enrichment(scored, date_str)
+        if count:
+            # Re-sort and update tier counts after blending
+            scored.sort(key=lambda j: j["_score"], reverse=True)
+            for job in scored:
+                job["_priority"] = classify_priority(job["_score"])
+            with open(scored_path, "w") as f:
+                json.dump(scored, f)
+            tier_counts = {"P1": 0, "P2": 0, "P3": 0, "P4": 0}
+            for job in scored:
+                tier_counts[job["_priority"]] = tier_counts.get(job["_priority"], 0) + 1
+            print(json.dumps({
+                "date": date_str, "reblended": count,
+                "tiers": tier_counts,
+            }, indent=2))
+        else:
+            print(f"No enrichment data found for {date_str} — nothing to blend")
+    else:
+        result = run_matcher(date=args.date, min_score=args.min_score)
+        print(f"\n{json.dumps(result, indent=2)}")

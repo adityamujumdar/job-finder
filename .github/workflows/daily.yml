@@ -101,9 +101,11 @@ jobs:
       - name: Run pipeline
         run: |
           if [[ "${{ github.event_name }}" != "push" ]]; then
-            echo "=== Full pipeline (download + score + report + site) ==="
+            echo "=== Full pipeline (download + score + enrich + reblend + report + site) ==="
             python -m src.scraper --skip-live
-            python -m src.matcher
+            python -m src.matcher                       # title-based scoring (~13s)
+            python -m src.enricher                      # fetch descriptions + extract skills (~8 min)
+            python -m src.matcher --reblend             # fast blend: apply skill match to scores (~1s)
             python -m src.report
             python -m src.site_generator
           else
