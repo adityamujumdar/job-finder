@@ -1,6 +1,22 @@
-"""Claude LLM integration layer — optional semantic intelligence for JobHunter AI.
+"""Claude LLM integration layer — PATH 2 (automated API) for JobHunter AI.
 
-Provides structured Claude calls for tasks where regex/heuristics fall short:
+This module is one of TWO ways Claude enhances the pipeline:
+
+  Path 1: Claude Code (interactive) — no API key needed
+    User runs /jobhunter, /enhance-jobs, /classify-jobs skills.
+    Claude reads data directly and applies semantic understanding.
+    Uses gstack/browse to fetch job descriptions.
+    See: enhance-jobs/SKILL.md, jobhunter/SKILL.md
+
+  Path 2: Automated API (this module) — requires ANTHROPIC_API_KEY
+    Called by src/resume_parser.py, src/enricher.py, src/matcher.py
+    Runs in CI, cron jobs, or automated scripts without human interaction.
+    Falls back to regex when no API key is set.
+
+Both paths produce the same data formats. The downstream pipeline
+(dashboard, classify, tailor) doesn't care which path ran.
+
+Provides structured Claude API calls for:
   • Resume parsing: extract name, location, skills, roles from free-form text
   • Title matching: semantic job-title-to-role relevance scoring
   • Skill extraction: section-aware skill classification from job descriptions

@@ -92,6 +92,7 @@ These skills are available when working in this project (via `.jac/skills/`) and
 | `/jobhunter` | Run the full pipeline: download → match → report → dashboard |
 | `/classify-jobs` | Classify scored jobs into APPLY NOW / THIS WEEK / STRETCH / SKIP buckets |
 | `/tailor-resume` | Look up a job by ID and generate a tailored HTML/PDF resume |
+| `/enhance-jobs` | LLM-enhanced job analysis — title re-scoring, skill extraction, gstack browse |
 
 **When the user types any of these commands (or trigger phrases like "find me jobs",
 "classify my jobs", "build a resume for"), read the corresponding SKILL.md file from
@@ -100,6 +101,7 @@ the project root and follow its instructions exactly:**
 - `/jobhunter` or "find me jobs" → read `jobhunter/SKILL.md`
 - `/classify-jobs` or "which jobs should I apply to" → read `classify-jobs/SKILL.md`
 - `/tailor-resume` or "build a resume for" → read `tailor-resume/SKILL.md`
+- `/enhance-jobs` or "enhance", "rescore", "deep analysis" → read `enhance-jobs/SKILL.md`
 
 **Install globally** (enables these commands in any Claude Code project):
 ```bash
@@ -207,28 +209,49 @@ scored/DATE.json (P1+P2 jobs)
 **Important:** Playwright sync API uses greenlets and CANNOT be called from threads.
 Browser jobs must run sequentially on the main thread that started the playwright instance.
 
-## LLM Integration (Optional Enhancement)
+## LLM Integration (Two Paths — Same Intelligence)
 
-`src/llm.py` provides optional Claude API integration for tasks where regex/heuristics fall short.
-**Requires:** `ANTHROPIC_API_KEY` environment variable. Without it, all functions return None and callers fall back to regex — zero impact on existing pipeline.
+Claude enhances the pipeline through **two independent paths** — both produce the same
+data format, and the pipeline doesn't care which one ran:
 
 ```
-                    src/llm.py (thin Claude layer)
-                    ├── parse_resume()          → resume_parser.py
-                    ├── classify_title_match()   → matcher.py (P1+P2 rescore)
-                    └── extract_jd_skills()      → enricher.py (P1+P2 only)
+Path 1: Claude Code (interactive)          Path 2: API (automated/CI)
+┌─────────────────────────────┐    ┌─────────────────────────────┐
+│  YOU are Claude              │    │  src/llm.py calls API       │
+│  /jobhunter, /enhance-jobs   │    │  ANTHROPIC_API_KEY required  │
+│  /classify-jobs              │    │  Runs in CI, cron, scripts   │
+│  gstack/browse fetches JDs   │    │  ~$1/day (Haiku pricing)     │
+│  No API key needed           │    │  Falls back to regex if unset│
+└──────────┬──────────────────┘    └──────────┬──────────────────┘
+           │                                   │
+           ▼                                   ▼
+    data/enriched/DATE-llm.json    data/enriched/DATE.json
+           │                                   │
+           └───────────┬───────────────────────┘
+                       ▼
+              Same downstream pipeline
+              (dashboard, classify, tailor)
 ```
 
-**What gets upgraded with an API key:**
-- **Resume parsing:** LLM extracts name/location/skills/roles from free-form text (handles international formats, non-standard layouts)
-- **Title matching:** P1+P2 jobs get semantic title re-scoring (regex handles 502K bulk pass, LLM refines ~1,200 top jobs)
-- **Skill extraction:** Section-aware skill classification from job descriptions (required vs nice-to-have)
+### Path 1: Claude Code Skills (no API key)
+- `/jobhunter` Step 1 auto-generates profile.yaml by reading your resume directly
+- `/jobhunter` Step 4b does quick title sanity check + fetches descriptions via gstack/browse
+- `/enhance-jobs` does deep semantic analysis: title re-scoring, skill extraction, browse
+- `/classify-jobs` already uses Claude for classification (APPLY NOW / SKIP)
 
-**Cost model:** ~$1/day using Claude Haiku for full pipeline enhancement.
+### Path 2: Automated API (`src/llm.py`)
+- Set `ANTHROPIC_API_KEY` in environment or `.env` file
+- `resume_parser.py`, `enricher.py`, `matcher.py` automatically use LLM when key is set
+- Falls back to regex when no key — zero impact on CI
+- Override model: `export JOBHUNTER_LLM_MODEL=claude-sonnet-4-20250514` (default: claude-3-haiku)
 
-**Setup:** `export ANTHROPIC_API_KEY=sk-ant-...` or add to `.env` file.
-
-**Override model:** `export JOBHUNTER_LLM_MODEL=claude-sonnet-4-20250514` (default: claude-3-haiku-20240307)
+### What gets upgraded:
+| Task | Regex (default) | Claude (either path) |
+|------|----------------|---------------------|
+| Resume parsing | Word-boundary matching against 80+ known skills | Understands context, international formats, implicit skills |
+| Title matching | Phrase match + Jaccard similarity | Semantic: "Data Platform Engineer" ≈ "Data Engineer" |
+| Skill extraction | Section split by headings, keyword match | Section-aware: "Python" in requirements vs "About Us" |
+| False positive detection | Penalty words, SWE family check | Understands job function: TPM ≠ SWE |
 
 ## Known Gotchas
 

@@ -7,7 +7,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-SKILLS = ["jobhunter", "classify-jobs", "tailor-resume"]
+SKILLS = ["jobhunter", "classify-jobs", "tailor-resume", "enhance-jobs"]
 
 
 @pytest.mark.parametrize("skill", SKILLS)

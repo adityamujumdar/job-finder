@@ -69,7 +69,7 @@ step "Registering skills with Claude Code..."
 mkdir -p "$SKILLS_DIR"
 
 # Create symlinks for each skill so /jobhunter, /classify-jobs, /tailor-resume work globally
-SKILLS=("jobhunter" "classify-jobs" "tailor-resume")
+SKILLS=("jobhunter" "classify-jobs" "tailor-resume" "enhance-jobs")
 for skill in "${SKILLS[@]}"; do
   target="$SKILLS_DIR/$skill"
   source_dir="$SCRIPT_DIR/$skill"
@@ -105,9 +105,11 @@ Available skills:
 - \`/jobhunter\` — full pipeline: download 502K+ jobs → score → ranked dashboard
 - \`/classify-jobs\` — classify P1/P2 matches: APPLY NOW / THIS WEEK / STRETCH / SKIP
 - \`/tailor-resume\` — build a tailored HTML resume for a specific job (by ID or description)
+- \`/enhance-jobs\` — LLM-enhanced analysis: semantic title re-scoring, skill extraction via gstack/browse
 
 Trigger words (even without slash): "find me jobs", "job search", "classify my P1 jobs",
-"build resume for job #", "tailor my resume for [company]", "which jobs should I apply to"
+"build resume for job #", "tailor my resume for [company]", "which jobs should I apply to",
+"enhance jobs", "rescore", "deep analysis"
 EOF
   ok "Added job-finder section to $CLAUDE_MD"
 fi
@@ -137,6 +139,7 @@ echo "  Available skills:"
 echo "     /jobhunter        → find and score 502K+ jobs"
 echo "     /classify-jobs    → rank matches: APPLY NOW / THIS WEEK / SKIP"
 echo "     /tailor-resume    → build a tailored resume for a specific job"
+echo "     /enhance-jobs     → LLM-enhanced analysis with gstack/browse"
 echo ""
 echo -e "  💡 ${GREEN}Type /jobhunter to start your job search!${NC}"
 echo ""

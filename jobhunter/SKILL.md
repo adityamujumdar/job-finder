@@ -138,16 +138,61 @@ If profile staleness check shows ⚠️: proceed with the pipeline — the match
 
 ## Step 1 — Profile Setup (first-time or "update profile" trigger)
 
-When user asks to set up or update their profile:
+When profile.yaml is missing or was just created from example, OR user asks to update:
 
-1. Read `config/profile.yaml` if it exists — understand current state
-2. Ask these questions one at a time (never batch — one AskUserQuestion per question):
+### Auto-Generate from Resume (preferred — zero questions)
+
+If a resume exists (RESUME.md or PDF), **you ARE Claude — parse it directly**:
+
+1. Read the resume:
+```bash
+cat RESUME.md 2>/dev/null || echo "NO_RESUME_MD"
+```
+
+2. If resume exists, extract these fields by reading the full text:
+   - **name**: From the heading or first bold line
+   - **email**: First email address
+   - **location**: Most recent "City, ST" or "City, Province"
+   - **years_experience**: Calculate from earliest start date to now (or latest end date)
+   - **skills**: All technical skills mentioned (languages, frameworks, tools, platforms)
+   - **target_roles**: Job titles held (e.g., "Senior Software Engineer", "Backend Engineer")
+   - **target_level**: entry (0-2yr), mid (2-5), senior (5-10), staff (10-15), principal (15+)
+
+3. You can ALSO run the regex parser as a cross-check:
+```bash
+python3 -m src.resume_parser --dry-run
+```
+
+4. Compare your extraction with the regex output. Use YOUR extraction as primary
+   (you understand context, international formats, non-standard layouts better),
+   but verify against the regex output for anything you might have missed.
+
+5. Generate profile.yaml content combining both sources. Show it to the user:
+```
+📋 Auto-generated profile from your resume:
+   Name: Jane Doe
+   Location: San Francisco, CA
+   Experience: 8 years → target level: senior
+   Skills: Python, AWS, Kubernetes, Go, PostgreSQL, ...
+   Target roles: Senior Software Engineer, Backend Engineer, ...
+```
+
+6. Use AskUserQuestion: "This profile was auto-generated from your resume. Want to customize anything?"
+   - **"Looks good — save it"** → Write profile.yaml
+   - **"I want to adjust roles/skills"** → Ask what to change, then save
+   - **"Start over manually"** → Fall through to manual Q&A below
+
+### Manual Setup (fallback — when no resume exists)
+
+If no resume exists or user chose "Start over manually":
+
+1. Ask these questions one at a time (never batch — one AskUserQuestion per question):
    - "What kind of roles are you looking for?" (e.g. Software Engineer, Data Analyst)
    - "Where are you based? Open to remote or relocation?"
    - "How many years of experience do you have?"
    - "Any specific companies you'd love to work at?"
-3. Show proposed `profile.yaml` contents and confirm before writing
-4. Re-run the pipeline after saving
+2. Show proposed `profile.yaml` contents and confirm before writing
+3. Re-run the pipeline after saving
 
 **NEVER write profile.yaml without showing the user what you're about to write.**
 **NEVER ask all questions at once — one at a time, like a conversation.**
@@ -236,6 +281,71 @@ Then ask the user if they also want to add gstack to the current project so team
 After user installs, retry the browse.
 
 **If >2,000 jobs at one company:** verify it's not a staffing farm before including.
+
+---
+
+## Step 4b — LLM Enhancement (Claude as the Model)
+
+After scoring, you ARE Claude — use your semantic understanding to enhance the results.
+This step is automatic and non-interactive. No API key needed.
+
+### Quick Title Sanity Check
+
+Read the top 20 P1 jobs and flag any obvious false positives that regex missed:
+
+```bash
+python3 -c "
+import json, pathlib
+today = __import__('datetime').date.today().isoformat()
+jobs = json.loads(pathlib.Path(f'data/scored/{today}.json').read_text())
+p1 = [j for j in jobs if j.get('_priority') == 'P1']
+for j in sorted(p1, key=lambda x: x.get('_score',0), reverse=True)[:20]:
+    print(f'{j.get(\"_score\",0):6.1f}  {j.get(\"title\",\"?\")} @ {j.get(\"company\",\"?\")}')
+"
+```
+
+Scan this list. If you spot titles that are clearly wrong-function for the user's
+target_roles (e.g., "Technical Program Manager" in a SWE search), note them for
+the false positive detection in Step 5b.
+
+### Fetch Missing Descriptions via gstack/browse
+
+If gstack is available and there are unenriched P1 jobs, fetch their descriptions:
+
+```bash
+BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
+B=$(echo "$BROWSE_OUTPUT" | head -1)
+```
+
+For each unenriched P1 job (up to 5 — keep the pipeline fast):
+```bash
+$B goto <job_url>
+$B text
+```
+
+After fetching, read the description yourself and extract:
+- Required skills vs nice-to-have (section-aware — you understand "Requirements" vs "About Us")
+- Whether the title actually matches the job function (title says "Data Engineer" but JD is SRE?)
+- Salary range if mentioned
+
+Score and save the browsed data:
+```bash
+python3 -c "
+from src.matcher import score_and_save_browsed
+result = score_and_save_browsed({
+    'title': 'REPLACE_TITLE',
+    'company': 'REPLACE_COMPANY',
+    'url': 'REPLACE_URL',
+    'location': 'REPLACE_LOCATION',
+    'skill_level': 'REPLACE_LEVEL',
+})
+print(f\"✅ {result['title']} @ {result['company']} → {result['_score']:.1f} ({result['_priority']})\")
+"
+```
+
+**This step should take <30 seconds.** Don't fetch more than 5 descriptions — the goal
+is a quick quality boost, not a full re-enrichment. For deeper analysis, the user can
+run `/enhance-jobs`.
 
 ---
 
