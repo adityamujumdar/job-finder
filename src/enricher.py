@@ -559,6 +559,23 @@ def compute_skill_match_pct(required_skills: list[str], profile_skills: list[str
 
 # ── Per-Job Enrichment ────────────────────────────────────────────────────────
 
+def _extract_skills_with_llm(text: str, profile_skills: list[str]) -> dict[str, list[str]] | None:
+    """Try LLM-based skill extraction from job description.
+
+    Returns {"required": [...], "nice_to_have": [...]} or None if LLM unavailable.
+    Provides section-aware classification that regex struggles with (e.g., skills
+    mentioned in "About Us" vs "Requirements" vs "Nice to Have" sections).
+    """
+    try:
+        from src.llm import extract_jd_skills
+        return extract_jd_skills(text, profile_skills)
+    except ImportError:
+        return None
+    except Exception as e:
+        log.debug("LLM skill extraction failed: %s", e)
+        return None
+
+
 def enrich_job(job: dict, profile: dict, browser: Any = None) -> dict[str, Any]:
     """Enrich a single job with description, skills, and salary.
 
@@ -613,9 +630,11 @@ def enrich_job(job: dict, profile: dict, browser: Any = None) -> dict[str, Any]:
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    # Extract skills and salary
+    # Extract skills and salary — LLM-first with regex fallback
     profile_skills = profile.get("skills", [])
-    skill_result = extract_skills(description_text, profile_skills)
+    skill_result = _extract_skills_with_llm(description_text, profile_skills)
+    if skill_result is None:
+        skill_result = extract_skills(description_text, profile_skills)
     salary = extract_salary(description_text)
     required = skill_result["required"]
     nice = skill_result["nice_to_have"]

@@ -329,7 +329,11 @@ def score_recency(scraped_at: str) -> float:
 # ── Main Scoring ───────────────────────────────────────────────────────────────
 
 def score_job(job: dict, profile: dict) -> float:
-    """Score a single job against the profile. Returns float [0, 100]."""
+    """Score a single job against the profile. Returns float [0, 100].
+
+    Side effect: stores _title_match factor (0-1) on job dict for downstream
+    LLM re-scoring in apply_enrichment().
+    """
     factors = {
         "title_match": score_title_match(job.get("title", ""), profile),
         "location_match": score_location_match(job.get("location", ""), profile),
@@ -338,6 +342,9 @@ def score_job(job: dict, profile: dict) -> float:
         "company_preference": score_company_preference(job, profile),
         "recency": score_recency(job.get("scraped_at", "")),
     }
+
+    # Store title_match for downstream LLM re-scoring
+    job["_title_match"] = factors["title_match"]
 
     raw = sum(WEIGHTS[k] * factors[k] for k in WEIGHTS)
     return round(raw * 100, 2)
@@ -539,10 +546,33 @@ def blend_enriched_score(title_score: float, skill_match_pct: int) -> float:
     return round(blended, 2)
 
 
+def _try_llm_title_rescore(jobs: list[dict], profile: dict) -> dict[str, float]:
+    """Attempt LLM-based title re-scoring for P1+P2 jobs.
+
+    Returns {url: llm_title_score} for jobs where LLM succeeded.
+    Empty dict if LLM unavailable. Only runs on P1+P2 (~1,200 jobs).
+    """
+    try:
+        from src.llm import batch_classify_titles, is_available
+        if not is_available():
+            return {}
+        target_roles = profile.get("target_roles", [])
+        if not target_roles:
+            return {}
+        return batch_classify_titles(jobs, target_roles)
+    except ImportError:
+        return {}
+    except Exception as e:
+        log.debug("LLM title rescore failed: %s", e)
+        return {}
+
+
 def apply_enrichment(scored: list[dict], date_str: str) -> tuple[list[dict], int]:
     """Re-score enriched jobs with blended scores. Modifies list in-place.
 
     Reads enriched sidecar (data/enriched/DATE.json) if present.
+    When ANTHROPIC_API_KEY is set, also re-scores title matches using
+    Claude for semantic accuracy (regex → LLM upgrade for P1+P2 only).
     Jobs without enrichment keep their original scores — no penalty.
 
     Args:
@@ -563,9 +593,33 @@ def apply_enrichment(scored: list[dict], date_str: str) -> tuple[list[dict], int
         log.warning("Could not load enriched data: %s", e)
         return scored, 0
 
+    # Optional: LLM title re-scoring for P1+P2 jobs
+    p1p2_jobs = [j for j in scored if j.get("_priority") in ("P1", "P2")]
+    try:
+        profile = load_profile()
+        llm_title_scores = _try_llm_title_rescore(p1p2_jobs, profile)
+    except Exception:
+        llm_title_scores = {}
+
+    if llm_title_scores:
+        log.info("LLM re-scored %d P1+P2 job titles", len(llm_title_scores))
+
     enriched_count = 0
     for job in scored:
         url = job.get("url", "")
+
+        # Apply LLM title re-score if available (replaces regex title_match)
+        if url in llm_title_scores:
+            llm_score = llm_title_scores[url]
+            # LLM score is 0-1, title_match weight is 35% of total
+            # Recalculate: replace title_match component with LLM score
+            old_title_contribution = WEIGHTS["title_match"] * job.get("_title_match", 0)
+            new_title_contribution = WEIGHTS["title_match"] * llm_score
+            adjustment = (new_title_contribution - old_title_contribution) * 100
+            job["_score"] = round(job["_score"] + adjustment, 2)
+            job["_llm_title_score"] = llm_score
+            job["_priority"] = classify_priority(job["_score"])
+
         enrich = enriched.get(url, {})
         if not enrich or enrich.get("unenriched") or enrich.get("skill_match_pct") is None:
             continue  # no enrichment — keep original score

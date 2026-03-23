@@ -30,7 +30,7 @@ IMPORT_TO_PKG = {
 }
 
 # Imports that are optional (guarded by try/except in the code)
-OPTIONAL_IMPORTS = {"playwright", "fitz"}
+OPTIONAL_IMPORTS = {"playwright", "fitz", "anthropic"}
 
 # Standard library modules (Python 3.9+)
 STDLIB = {

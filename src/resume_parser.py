@@ -380,22 +380,66 @@ def infer_exclude_levels(target_level: str) -> list[str]:
     return [l for i, l in enumerate(levels) if i < target_idx - 1]
 
 
+# ── LLM Integration ──────────────────────────────────────────────────────────
+
+def _try_llm_extraction(text: str) -> dict | None:
+    """Attempt to extract profile data using Claude LLM.
+
+    Returns parsed dict or None if LLM is unavailable or fails.
+    This is a single API call that replaces ~6 regex functions.
+    """
+    try:
+        from src.llm import parse_resume
+        result = parse_resume(text)
+        if result:
+            log.info(
+                "LLM extracted: name=%s, location=%s, %d skills, %d roles",
+                result.get("name", "?"), result.get("location", "?"),
+                len(result.get("skills", [])), len(result.get("roles", [])),
+            )
+        return result
+    except ImportError:
+        return None
+    except Exception as e:
+        log.debug("LLM extraction failed: %s", e)
+        return None
+
+
 # ── Profile Generation ────────────────────────────────────────────────────────
 
 def generate_profile(text: str) -> dict[str, Any]:
     """Generate a complete profile dict from resume text.
 
+    Uses Claude LLM for extraction when available (higher accuracy for
+    free-form resumes, international formats, non-standard layouts).
+    Falls back to regex extraction when ANTHROPIC_API_KEY is not set.
+
     Returns a dict matching the config/profile.yaml schema, ready to be
     written as YAML. All fields are populated with best-effort extraction
     or sensible defaults.
     """
-    name = extract_name(text)
-    email = extract_email(text)
-    location = extract_location(text)
-    years = extract_years_experience(text)
-    skills = extract_skills(text)
-    roles = extract_roles(text)
-    level = infer_target_level(years)
+    # Try LLM extraction first (more accurate for unstructured resumes)
+    llm_result = _try_llm_extraction(text)
+
+    if llm_result:
+        log.info("Using LLM-extracted profile data")
+        name = llm_result.get("name", "") or extract_name(text)
+        email = llm_result.get("email", "") or extract_email(text)
+        location = llm_result.get("location", "") or extract_location(text)
+        years = llm_result.get("years_experience", 0) or extract_years_experience(text)
+        skills = llm_result.get("skills", []) or extract_skills(text)
+        roles = llm_result.get("roles", []) or extract_roles(text)
+        level = llm_result.get("target_level", "") or infer_target_level(years)
+    else:
+        log.info("Using regex-based profile extraction (set ANTHROPIC_API_KEY for LLM)")
+        name = extract_name(text)
+        email = extract_email(text)
+        location = extract_location(text)
+        years = extract_years_experience(text)
+        skills = extract_skills(text)
+        roles = extract_roles(text)
+        level = infer_target_level(years)
+
     exclude = infer_exclude_levels(level)
 
     # Build target_roles: extracted titles + generalized versions

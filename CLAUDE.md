@@ -207,6 +207,29 @@ scored/DATE.json (P1+P2 jobs)
 **Important:** Playwright sync API uses greenlets and CANNOT be called from threads.
 Browser jobs must run sequentially on the main thread that started the playwright instance.
 
+## LLM Integration (Optional Enhancement)
+
+`src/llm.py` provides optional Claude API integration for tasks where regex/heuristics fall short.
+**Requires:** `ANTHROPIC_API_KEY` environment variable. Without it, all functions return None and callers fall back to regex — zero impact on existing pipeline.
+
+```
+                    src/llm.py (thin Claude layer)
+                    ├── parse_resume()          → resume_parser.py
+                    ├── classify_title_match()   → matcher.py (P1+P2 rescore)
+                    └── extract_jd_skills()      → enricher.py (P1+P2 only)
+```
+
+**What gets upgraded with an API key:**
+- **Resume parsing:** LLM extracts name/location/skills/roles from free-form text (handles international formats, non-standard layouts)
+- **Title matching:** P1+P2 jobs get semantic title re-scoring (regex handles 502K bulk pass, LLM refines ~1,200 top jobs)
+- **Skill extraction:** Section-aware skill classification from job descriptions (required vs nice-to-have)
+
+**Cost model:** ~$1/day using Claude Haiku for full pipeline enhancement.
+
+**Setup:** `export ANTHROPIC_API_KEY=sk-ant-...` or add to `.env` file.
+
+**Override model:** `export JOBHUNTER_LLM_MODEL=claude-sonnet-4-20250514` (default: claude-3-haiku-20240307)
+
 ## Known Gotchas
 
 - Lever APIs are flaky (Netflix times out at 30s) — has retry with 60s timeout
