@@ -289,46 +289,111 @@ After user installs, retry the browse.
 After scoring, you ARE Claude — use your semantic understanding to enhance the results.
 This step is automatic and non-interactive. No API key needed.
 
-### Quick Title Sanity Check
+You are the LLM. No API key needed — you read the data and apply semantic understanding
+directly. This upgrades the regex-based pipeline with your judgment:
+- Title matching: "Staff Platform Engineer" is NOT the same as "Data Platform Engineer" — regex can't tell, you can.
+- Skill extraction: "Experience with cloud-native architectures" means AWS/GCP/Azure — regex only matches exact words.
+- Section awareness: "Python" in "About Us" ≠ "Python" in "Requirements" — you understand context.
 
-Read the top 20 P1 jobs and flag any obvious false positives that regex missed:
+### 4b.1 — Load Candidates
 
 ```bash
 python3 -c "
 import json, pathlib
 today = __import__('datetime').date.today().isoformat()
-jobs = json.loads(pathlib.Path(f'data/scored/{today}.json').read_text())
+scored_path = pathlib.Path(f'data/scored/{today}.json')
+enriched_path = pathlib.Path(f'data/enriched/{today}.json')
+
+if not scored_path.exists():
+    print('⚠️  No scored data — skipping LLM enhancement')
+    exit(0)
+
+jobs = json.loads(scored_path.read_text())
 p1 = [j for j in jobs if j.get('_priority') == 'P1']
-for j in sorted(p1, key=lambda x: x.get('_score',0), reverse=True)[:20]:
-    print(f'{j.get(\"_score\",0):6.1f}  {j.get(\"title\",\"?\")} @ {j.get(\"company\",\"?\")}')
+p2 = sorted([j for j in jobs if j.get('_priority') == 'P2'], key=lambda x: x.get('_score',0), reverse=True)[:30]
+candidates = p1 + p2
+print(f'📊 {len(p1)} P1 + {len(p2)} P2 (top 30) = {len(candidates)} jobs to enhance')
+
+enriched = {}
+if enriched_path.exists():
+    enriched_data = json.loads(enriched_path.read_text())
+    if isinstance(enriched_data, dict):
+        enriched = enriched_data
+    elif isinstance(enriched_data, list):
+        enriched = {j.get('url',''): j for j in enriched_data if j.get('url')}
+    print(f'📝 {len(enriched)} jobs already enriched')
+
+for j in candidates:
+    url = j.get('url', '')
+    has_desc = url in enriched and not enriched.get(url, {}).get('unenriched')
+    desc_flag = '📄' if has_desc else '⚠️'
+    print(f'  {desc_flag} {j.get(\"title\",\"?\")} @ {j.get(\"company\",\"?\")} — {j.get(\"_score\",0):.1f} ({j.get(\"_priority\",\"?\")})')
 "
 ```
 
-Scan this list. If you spot titles that are clearly wrong-function for the user's
-target_roles (e.g., "Technical Program Manager" in a SWE search), note them for
-the false positive detection in Step 5b.
+```bash
+# Load profile for matching context
+cat config/profile.yaml
+```
 
-### Fetch Missing Descriptions via gstack/browse
+### 4b.2 — Title Re-Scoring
 
-If gstack is available and there are unenriched P1 jobs, fetch their descriptions:
+Read ALL P1 + top 30 P2 job titles and the user's `target_roles` from profile.yaml.
+
+For EACH job, assign a semantic title relevance score (0.0 to 1.0):
+
+**Scoring guide:**
+- **1.0**: Exact match or trivially equivalent ("Backend Engineer" ≈ "Software Engineer, Backend")
+- **0.85-0.95**: Same role family, different seniority/specialization
+- **0.6-0.85**: Related role, significant overlap in day-to-day work
+- **0.3-0.6**: Tangentially related, some skill overlap
+- **0.0-0.3**: Different job family entirely
+
+**Critical distinctions regex misses:**
+- "Data Engineer" (builds pipelines) vs "Data Analyst" (writes SQL + dashboards) → 0.6, not 1.0
+- "Software Engineer - Data Platform" vs "Data Engineer" → 0.9 (same actual work)
+- "Staff Platform Engineer" vs "Staff Software Engineer" → 0.85 (same family, different focus)
+- "Machine Learning Engineer" vs "Software Engineer" → 0.7 (ML is SWE subspecialty)
+- "Technical Program Manager" vs "Software Engineer" → 0.2 (different function entirely)
+
+Produce your re-scored titles as a JSON block for Step 4b.4.
+
+### 4b.3 — Skill Extraction from Job Descriptions
+
+For each candidate that has an enriched description, read the full description text and
+extract skills with section awareness.
+
+**If descriptions are missing — fetch them with gstack/browse:**
 
 ```bash
 BROWSE_OUTPUT=$(~/.claude/skills/gstack/browse/bin/find-browse 2>/dev/null)
 B=$(echo "$BROWSE_OUTPUT" | head -1)
+if [ -n "$B" ]; then
+  echo "✅ gstack/browse available — can fetch missing job descriptions"
+else
+  echo "⚠️ gstack not available — will analyze existing enriched data only"
+fi
 ```
 
-For each unenriched P1 job (up to 5 — keep the pipeline fast):
+For each unenriched P1 job (up to 10):
 ```bash
 $B goto <job_url>
 $B text
 ```
 
-After fetching, read the description yourself and extract:
-- Required skills vs nice-to-have (section-aware — you understand "Requirements" vs "About Us")
-- Whether the title actually matches the job function (title says "Data Engineer" but JD is SRE?)
-- Salary range if mentioned
+After fetching, read the description and classify skills:
 
-Score and save the browsed data:
+**For each job description:**
+1. Identify sections: Requirements, Nice-to-Have, About Us, Responsibilities
+2. Map the user's profile skills against each section
+3. Output:
+   - `required`: skills explicitly listed under requirements/qualifications
+   - `nice_to_have`: skills under preferred/bonus sections
+   - `implicit`: skills implied but not named (e.g., "cloud-native" implies AWS/GCP)
+   - `match_pct`: percentage of required skills the user has
+   - `missing_critical`: required skills the user lacks
+
+Score and save any browsed jobs:
 ```bash
 python3 -c "
 from src.matcher import score_and_save_browsed
@@ -343,9 +408,44 @@ print(f\"✅ {result['title']} @ {result['company']} → {result['_score']:.1f} 
 "
 ```
 
-**This step should take <30 seconds.** Don't fetch more than 5 descriptions — the goal
-is a quick quality boost, not a full re-enrichment. For deeper analysis, the user can
-run `/enhance-jobs`.
+### 4b.4 — Save Enhanced Data
+
+Save your analysis to `data/enriched/DATE-llm.json` as a sidecar:
+
+```bash
+python3 -c "
+import json, pathlib
+from datetime import date
+
+today = date.today().isoformat()
+output = pathlib.Path(f'data/enriched/{today}-llm.json')
+output.parent.mkdir(parents=True, exist_ok=True)
+
+# Your analysis goes here — paste your JSON blocks
+enhanced = {
+    'title_rescores': [],      # from Step 4b.2
+    'skill_extractions': [],   # from Step 4b.3
+    'source': 'claude-code',
+    'model': 'claude-code-inline',
+}
+
+output.write_text(json.dumps(enhanced, indent=2))
+print(f'✅ Enhanced data saved to {output}')
+print(f'   {len(enhanced[\"title_rescores\"])} title rescores')
+print(f'   {len(enhanced[\"skill_extractions\"])} skill extractions')
+"
+```
+
+### 4b.5 — Enhancement Summary (feeds into Step 5)
+
+Note these results for Step 5 presentation:
+- How many titles were re-scored up vs down vs unchanged
+- Biggest false positives caught (title says X but job is actually Y)
+- Common skill gaps across P1 jobs
+- Average skill match percentage
+
+**This step should take ~60-90 seconds.** The goal is comprehensive semantic analysis
+of all P1 + top P2 jobs in a single pipeline pass.
 
 ---
 
@@ -368,10 +468,21 @@ Anchor every claim in actual data:
 - "Stripe scores 93.2 because your Python + distributed systems background matches their exact keywords" → good
 - "Stripe is a strong match" → too vague, cut it
 
+If Step 4b ran, also show the LLM enhancement summary:
+```
+🧠 LLM Enhancement (semantic analysis of {n} jobs):
+  ↑ Upgraded: {count} jobs scored higher with semantic matching
+  ↓ Downgraded: {count} false positives caught
+  = Unchanged: {count} regex was already correct
+  📝 Skill match: avg {pct}% across P1 jobs
+  Common gaps: {skill1} (in {n} jobs), {skill2} (in {n} jobs)
+```
+
 Then mention:
 - P2 count and best 2-3 examples
 - Report saved at `data/reports/YYYY-MM-DD.csv`
 - Dashboard at `site/index.html`
+- Enhanced data saved at `data/enriched/DATE-llm.json`
 
 End with an offer:
 > "Want me to classify these and rank which to apply to first? → `/classify-jobs`"
