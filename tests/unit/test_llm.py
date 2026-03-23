@@ -46,9 +46,11 @@ class TestIsAvailable:
             assert llm_module.is_available() is False
 
     def test_valid_api_key(self):
+        # Create a mock anthropic module for CI where it's not installed
+        mock_anthropic = MagicMock()
+        mock_anthropic.Anthropic.return_value = MagicMock()
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test123"}):
-            with patch("anthropic.Anthropic") as mock_cls:
-                mock_cls.return_value = MagicMock()
+            with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
                 assert llm_module.is_available() is True
 
     def test_anthropic_import_error(self):
