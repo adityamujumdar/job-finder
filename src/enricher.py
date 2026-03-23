@@ -1,20 +1,27 @@
 """Job description enricher — fetches and parses descriptions for scored jobs.
 
 Fetches full job descriptions from ATS APIs (Greenhouse, Lever, Ashby) and
-optionally via gstack/browse for Workday. Extracts required/nice-to-have skills
-and salary ranges using regex. Saves a sidecar file in data/enriched/DATE.json
-keyed by job URL.
+via Playwright headless browser or gstack/browse for Workday. Extracts
+required/nice-to-have skills and salary ranges using regex. Saves a sidecar
+file in data/enriched/DATE.json keyed by job URL.
 
 Data flow:
   data/scored/DATE.json (P1+P2 jobs)
         │
-  enricher.py (async HTTP, concurrency=8)
+  incremental skip (enriched within 7 days → skip)
         │
   ┌─────────────────────────────────────────────────────┐
-  │  Greenhouse boards-api  → JSON content field        │
-  │  Lever posting API      → JSON text field           │
-  │  Ashby posting API      → JSON descriptionHtml      │
-  │  Workday                → gstack/browse (fallback)  │
+  │  API jobs (concurrent, ThreadPoolExecutor×8):       │
+  │    Greenhouse boards-api  → JSON content field      │
+  │    Lever posting API      → JSON text field         │
+  │    Ashby posting API      → JSON descriptionHtml    │
+  │                                                     │
+  │  Browser jobs (sequential, main thread):            │
+  │    Workday/Unknown → Playwright headless (primary)  │
+  │                    → gstack/browse (fallback)       │
+  │  Note: Playwright sync API uses greenlets and       │
+  │  CANNOT be called from threads — must run on the    │
+  │  thread that started the playwright instance.       │
   └─────────────────────────────────────────────────────┘
         │
   HTML → BeautifulSoup plain text
@@ -33,6 +40,12 @@ Shadow paths:
   timeout → unenriched=True
   empty   → unenriched=True
   no text → unenriched=True
+
+Browser fallback chain (Workday/unknown ATS):
+  1. Playwright headless (works in CI + local)
+     → wait for content selector → login page detection
+  2. gstack/browse (local only, requires manual install)
+  3. Both fail → unenriched=True (graceful degradation)
 """
 
 from __future__ import annotations
@@ -204,25 +217,31 @@ def _http_get(url: str) -> requests.Response | None:
     return None  # exhausted retries
 
 
-def fetch_greenhouse(slug: str, job_id: str) -> str | None:
+def fetch_greenhouse(slug: str, job_id: str) -> tuple[str | None, bool]:
     """Fetch job description HTML from Greenhouse boards-api v1.
 
-    Returns cleaned plain text or None on failure.
+    Returns (cleaned_text, expired) tuple:
+      - (text, False) on success
+      - (None, True) if job is expired (404/410)
+      - (None, False) on other failures
     """
     api_url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{job_id}"
     r = _http_get(api_url)
-    if r is None or r.status_code == 404:
-        return None  # expired or not found
+    if r is None:
+        return (None, False)
+    if r.status_code in (404, 410):
+        return (None, True)  # expired listing
     if r.status_code != 200:
         log.debug("Greenhouse %s/%s → %d", slug, job_id, r.status_code)
-        return None
+        return (None, False)
     try:
         data = r.json()
         content = data.get("content", "")
-        return _html_to_text(content) if content else None
+        text = _html_to_text(content) if content else None
+        return (text, False)
     except Exception as e:
         log.debug("Greenhouse JSON parse error for %s/%s: %s", slug, job_id, e)
-        return None
+        return (None, False)
 
 
 def fetch_lever(slug: str, job_id: str) -> str | None:
@@ -279,7 +298,7 @@ def fetch_ashby(slug: str, job_id: str) -> str | None:
 
 
 def fetch_via_browse(url: str) -> str | None:
-    """Fetch job page text via gstack/browse (used for Workday and unknown ATS).
+    """Fetch job page text via gstack/browse (local only, used as fallback).
 
     Returns plain text or None if gstack not installed or fetch fails.
     """
@@ -305,6 +324,131 @@ def fetch_via_browse(url: str) -> str | None:
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
         log.debug("gstack browse failed for %s: %s", url, e)
         return None
+
+
+# ── Playwright Headless Browser ───────────────────────────────────────────────
+
+# Workday content selectors — tried in order, first match wins.
+# Different Workday themes use different DOM structures.
+WORKDAY_SELECTORS = [
+    '[data-automation-id="jobPostingDescription"]',   # Standard Workday
+    '[data-automation-id="jobPostingPage"]',           # Alternate layout
+    '.css-1q2dra3',                                     # Workday CSS class
+    '#mainContent',                                     # Generic main content
+]
+
+# Login page markers — if ANY of these appear in the page text,
+# the page is a login/auth wall, not the job description.
+LOGIN_MARKERS = ["sign in", "create account", "workdayloginform", "forgot password"]
+
+
+def _is_login_page(text: str) -> bool:
+    """Detect if page text is a Workday login page instead of a job description."""
+    text_lower = text.lower()
+    # Require at least 2 markers to avoid false positives on job descriptions
+    # that mention "create account" in benefits text
+    matches = sum(1 for marker in LOGIN_MARKERS if marker in text_lower)
+    return matches >= 2
+
+
+def fetch_workday_playwright(url: str, browser: Any = None) -> str | None:
+    """Fetch job description from a Workday page using Playwright headless browser.
+
+    Uses a shared browser instance (passed from run_enricher) with a fresh
+    context per call for thread safety. Tries multiple Workday DOM selectors.
+
+    Args:
+        url: Workday job posting URL
+        browser: Playwright Browser instance (None = Playwright not available)
+
+    Returns:
+        Plain text description or None on failure. Never raises.
+    """
+    if browser is None:
+        return None
+
+    context = None
+    try:
+        context = browser.new_context(
+            user_agent=HEADERS["User-Agent"],
+            java_script_enabled=True,
+        )
+        page = context.new_page()
+
+        # Navigate with generous timeout (Workday SPAs are slow)
+        page.goto(url, timeout=30000, wait_until="domcontentloaded")
+
+        # Try each selector — Workday themes vary across companies
+        text = None
+        for selector in WORKDAY_SELECTORS:
+            try:
+                page.wait_for_selector(selector, timeout=10000)
+                element = page.query_selector(selector)
+                if element:
+                    text = element.text_content()
+                    if text and len(text.strip()) >= MIN_DESCRIPTION_CHARS:
+                        text = text.strip()
+                        break
+            except Exception:
+                continue  # try next selector
+
+        # Fallback: wait for network idle and grab full page text
+        if not text or len(text) < MIN_DESCRIPTION_CHARS:
+            try:
+                page.wait_for_load_state("networkidle", timeout=10000)
+                text = page.text_content("body")
+                text = text.strip() if text else ""
+            except Exception:
+                pass
+
+        if not text or len(text) < MIN_DESCRIPTION_CHARS:
+            return None
+
+        # Login page detection — Workday may redirect to auth wall
+        if _is_login_page(text):
+            log.debug("Login page detected for %s — marking as unenriched", url)
+            return None
+
+        return text
+
+    except Exception as e:
+        # Catches playwright.TimeoutError, playwright.Error, and any other failure.
+        # No in-function retry — fetch_with_browser falls back to gstack/browse.
+        log.debug("Playwright fetch failed for %s: %s", url, type(e).__name__)
+        return None
+    finally:
+        if context:
+            try:
+                context.close()
+            except Exception:
+                pass
+
+
+def fetch_with_browser(url: str, browser: Any = None) -> str | None:
+    """Fetch page text using Playwright (primary) → gstack/browse (fallback).
+
+    Unified browser fetch for Workday and unknown ATS platforms. Tries
+    Playwright headless first (works in CI + local), falls back to gstack
+    (local only, requires manual install).
+
+    Args:
+        url: Job posting URL
+        browser: Playwright Browser instance (None = Playwright not available)
+
+    Returns:
+        Plain text or None if both methods fail.
+    """
+    # Try 1: Playwright headless (works everywhere)
+    text = fetch_workday_playwright(url, browser)
+    if text:
+        return text
+
+    # Try 2: gstack/browse (local only, requires manual install)
+    text = fetch_via_browse(url)
+    if text:
+        return text
+
+    return None
 
 
 # ── Text Processing ────────────────────────────────────────────────────────────
@@ -415,11 +559,17 @@ def compute_skill_match_pct(required_skills: list[str], profile_skills: list[str
 
 # ── Per-Job Enrichment ────────────────────────────────────────────────────────
 
-def enrich_job(job: dict, profile: dict) -> dict[str, Any]:
+def enrich_job(job: dict, profile: dict, browser: Any = None) -> dict[str, Any]:
     """Enrich a single job with description, skills, and salary.
 
-    Tries ATS-specific APIs in order. Falls back to gstack/browse for Workday.
+    Tries ATS-specific APIs in order. For Workday/unknown ATS, uses
+    fetch_with_browser() which tries Playwright → gstack/browse.
     Returns an enrichment dict suitable for storing in enriched/DATE.json.
+
+    Args:
+        job: Scored job dict with url, ats, etc.
+        profile: Loaded user profile.
+        browser: Playwright Browser instance (None = Playwright not available).
 
     All failures return a safe partial result — never raises.
     """
@@ -433,13 +583,7 @@ def enrich_job(job: dict, profile: dict) -> dict[str, Any]:
             info = extract_greenhouse_info(url)
             if info:
                 slug, job_id = info
-                description_text = fetch_greenhouse(slug, job_id)
-                if description_text is None:
-                    # Check if it's actually a 404 (expired listing)
-                    api_url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{job_id}"
-                    r = requests.get(api_url, timeout=REQUEST_TIMEOUT, headers=HEADERS)
-                    if r.status_code in (404, 410):
-                        expired = True
+                description_text, expired = fetch_greenhouse(slug, job_id)
 
         elif ats == "lever":
             info = extract_lever_info(url)
@@ -453,13 +597,10 @@ def enrich_job(job: dict, profile: dict) -> dict[str, Any]:
                 slug, job_id = info
                 description_text = fetch_ashby(slug, job_id)
 
-        elif ats == "workday":
-            # Workday has no clean JSON API — try gstack/browse if available
-            description_text = fetch_via_browse(url)
-
-        # Unknown ATS: try browse as best-effort
-        elif ats == "unknown":
-            description_text = fetch_via_browse(url)
+        elif ats in ("workday", "unknown"):
+            # Workday has no clean JSON API, unknown ATS is best-effort.
+            # fetch_with_browser tries Playwright → gstack/browse.
+            description_text = fetch_with_browser(url, browser)
 
     except Exception as e:
         log.warning("Unexpected error enriching %s: %s", url, e)
@@ -543,28 +684,118 @@ def run_enricher(date: str | None = None, limit: int | None = None) -> dict:
     results: dict[str, Any] = dict(existing)  # preserve previously enriched jobs
     success = error = skipped = 0
 
-    with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
-        future_to_job = {
-            pool.submit(enrich_job, job, profile): job
-            for job in target_jobs
-        }
-        for i, future in enumerate(as_completed(future_to_job), 1):
-            job = future_to_job[future]
-            url = job.get("url", "")
+    # Incremental skip: don't re-fetch jobs already successfully enriched
+    # within SKIP_IF_ENRICHED_WITHIN_DAYS. Saves ~8 min/day of HTTP calls.
+    SKIP_IF_ENRICHED_WITHIN_DAYS = 7
+    skip_cutoff = datetime.now(timezone.utc).timestamp() - (SKIP_IF_ENRICHED_WITHIN_DAYS * 86400)
+
+    jobs_to_enrich = []
+    for job in target_jobs:
+        url = job.get("url", "")
+        prev = existing.get(url)
+        if prev and not prev.get("unenriched") and prev.get("fetched_at"):
             try:
-                result = future.result()
-                results[url] = result
-                if result.get("unenriched"):
+                fetched_ts = datetime.fromisoformat(prev["fetched_at"]).timestamp()
+                if fetched_ts > skip_cutoff:
+                    skipped += 1
+                    continue
+            except (ValueError, TypeError):
+                pass  # malformed timestamp — re-enrich
+        jobs_to_enrich.append(job)
+
+    log.info("Skipping %d already-enriched jobs (within %d days)", skipped, SKIP_IF_ENRICHED_WITHIN_DAYS)
+
+    # Split jobs into two groups:
+    #   1. API jobs (Greenhouse/Lever/Ashby) → thread pool (concurrent HTTP)
+    #   2. Browser jobs (Workday/unknown) → sequential on main thread (Playwright
+    #      sync API uses greenlets and CANNOT be called from multiple threads)
+    #
+    # Pipeline:
+    #   jobs_to_enrich
+    #     ├── api_jobs ──────→ ThreadPoolExecutor(8) ──→ results
+    #     └── browser_jobs ──→ sequential + Playwright ──→ results
+    #
+    api_jobs = []
+    browser_jobs = []
+    for job in jobs_to_enrich:
+        ats = detect_ats(job)
+        if ats in ("greenhouse", "lever", "ashby", "bamboohr"):
+            api_jobs.append(job)
+        else:
+            browser_jobs.append(job)
+
+    log.info("Enriching %d API jobs (concurrent) + %d browser jobs (sequential)",
+             len(api_jobs), len(browser_jobs))
+
+    def _record_result(job: dict, result: dict) -> None:
+        """Record enrichment result and update counters."""
+        nonlocal success, error
+        url = job.get("url", "")
+        results[url] = result
+        if result.get("unenriched"):
+            error += 1
+        else:
+            success += 1
+
+    # Phase 1: API jobs via thread pool (no browser needed)
+    if api_jobs:
+        with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
+            future_to_job = {
+                pool.submit(enrich_job, job, profile, None): job
+                for job in api_jobs
+            }
+            for i, future in enumerate(as_completed(future_to_job), 1):
+                job = future_to_job[future]
+                try:
+                    _record_result(job, future.result())
+                except Exception as e:
+                    url = job.get("url", "")
+                    log.warning("Enrichment failed for %s: %s", url, e)
+                    results[url] = {"url": url, "unenriched": True, "error": str(e)}
                     error += 1
-                else:
-                    success += 1
+
+                if i % 50 == 0:
+                    log.info("  api enriched %d/%d", i, len(api_jobs))
+
+    # Phase 2: Browser jobs sequentially with Playwright on main thread
+    # Playwright sync API uses greenlets — must stay on the thread that started it.
+    pw_instance = None
+    browser = None
+    if browser_jobs:
+        try:
+            from playwright.sync_api import sync_playwright
+            pw_instance = sync_playwright().start()
+            browser = pw_instance.chromium.launch(headless=True)
+            log.info("Playwright browser launched for %d browser jobs", len(browser_jobs))
+        except ImportError:
+            log.info("Playwright not installed — using gstack/browse only for Workday")
+        except Exception as e:
+            log.warning("Playwright launch failed (%s) — using gstack/browse only", e)
+
+    try:
+        for i, job in enumerate(browser_jobs, 1):
+            try:
+                result = enrich_job(job, profile, browser)
+                _record_result(job, result)
             except Exception as e:
+                url = job.get("url", "")
                 log.warning("Enrichment failed for %s: %s", url, e)
                 results[url] = {"url": url, "unenriched": True, "error": str(e)}
                 error += 1
 
-            if i % 50 == 0:
-                log.info("  enriched %d/%d (%.0f%%)", i, len(target_jobs), i/len(target_jobs)*100)
+            if i % 20 == 0:
+                log.info("  browser enriched %d/%d", i, len(browser_jobs))
+    finally:
+        if browser:
+            try:
+                browser.close()
+            except Exception:
+                pass
+        if pw_instance:
+            try:
+                pw_instance.stop()
+            except Exception:
+                pass
 
     elapsed = time.time() - t0
 
@@ -582,8 +813,8 @@ def run_enricher(date: str | None = None, limit: int | None = None) -> dict:
     }
 
     log.info(
-        "Enrichment complete: %d success, %d unenriched in %.1fs",
-        success, error, elapsed
+        "Enrichment complete: %d success, %d unenriched, %d skipped in %.1fs",
+        success, error, skipped, elapsed
     )
 
     return summary

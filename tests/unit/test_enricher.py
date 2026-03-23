@@ -21,6 +21,13 @@ from src.enricher import (
     extract_salary,
     compute_skill_match_pct,
     _html_to_text,
+    _is_login_page,
+    fetch_workday_playwright,
+    fetch_with_browser,
+    fetch_greenhouse,
+    enrich_job,
+    run_enricher,
+    MIN_DESCRIPTION_CHARS,
 )
 from src.matcher import blend_enriched_score
 
@@ -270,3 +277,322 @@ class TestBlendEnrichedScore:
         low = blend_enriched_score(0, 0)
         assert 0 <= low <= 100
         assert 0 <= high <= 100
+
+
+# ── Login Page Detection ─────────────────────────────────────────────────────
+
+class TestIsLoginPage:
+    def test_detects_workday_login(self):
+        text = "Sign In to Your Account\nCreate Account\nForgot Password"
+        assert _is_login_page(text) is True
+
+    def test_does_not_flag_job_description(self):
+        text = "We are hiring a Software Engineer. Sign up for our newsletter."
+        assert _is_login_page(text) is False
+
+    def test_requires_two_markers(self):
+        # Only one marker — should NOT be flagged
+        text = "Sign in to apply for this position. Java required."
+        assert _is_login_page(text) is False
+
+
+# ── Playwright Fetch ─────────────────────────────────────────────────────────
+
+class TestFetchWorkdayPlaywright:
+    def test_happy_path(self):
+        """Playwright returns a valid job description."""
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_page = MagicMock()
+        mock_element = MagicMock()
+
+        mock_browser.new_context.return_value = mock_context
+        mock_context.new_page.return_value = mock_page
+        mock_page.query_selector.return_value = mock_element
+        mock_element.text_content.return_value = "X" * 200  # > MIN_DESCRIPTION_CHARS
+
+        result = fetch_workday_playwright("https://company.wd5.myworkdayjobs.com/job/123", mock_browser)
+        assert result is not None
+        assert len(result) >= MIN_DESCRIPTION_CHARS
+        mock_context.close.assert_called()
+
+    def test_returns_none_when_browser_is_none(self):
+        """Playwright not available — returns None gracefully."""
+        result = fetch_workday_playwright("https://company.wd5.myworkdayjobs.com/job/123", None)
+        assert result is None
+
+    def test_returns_none_on_timeout(self):
+        """Playwright times out — returns None, context is cleaned up."""
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_page = MagicMock()
+
+        mock_browser.new_context.return_value = mock_context
+        mock_context.new_page.return_value = mock_page
+        mock_page.goto.side_effect = Exception("Timeout exceeded")
+
+        result = fetch_workday_playwright("https://company.wd5.myworkdayjobs.com/job/123", mock_browser)
+        assert result is None
+        mock_context.close.assert_called()
+
+    def test_detects_login_page(self):
+        """Login page detected — returns None instead of wrong content."""
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_page = MagicMock()
+        mock_element = MagicMock()
+
+        mock_browser.new_context.return_value = mock_context
+        mock_context.new_page.return_value = mock_page
+        mock_page.query_selector.return_value = mock_element
+        # Return login page content (>100 chars but contains login markers)
+        login_text = "Sign In to Your Workday Account " * 10 + " Create Account Forgot Password"
+        mock_element.text_content.return_value = login_text
+
+        result = fetch_workday_playwright("https://company.wd5.myworkdayjobs.com/job/123", mock_browser)
+        assert result is None
+
+    def test_short_text_returns_none(self):
+        """Page returns too little text — returns None."""
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_page = MagicMock()
+        mock_element = MagicMock()
+
+        mock_browser.new_context.return_value = mock_context
+        mock_context.new_page.return_value = mock_page
+        mock_page.query_selector.return_value = mock_element
+        mock_element.text_content.return_value = "Loading..."  # < 100 chars
+
+        # Also set up networkidle fallback to return short text
+        mock_page.text_content.return_value = "Loading..."
+
+        result = fetch_workday_playwright("https://company.wd5.myworkdayjobs.com/job/123", mock_browser)
+        assert result is None
+
+
+# ── fetch_with_browser Fallback Chain ────────────────────────────────────────
+
+class TestFetchWithBrowser:
+    @patch("src.enricher.fetch_workday_playwright")
+    @patch("src.enricher.fetch_via_browse")
+    def test_playwright_succeeds_skips_gstack(self, mock_browse, mock_pw):
+        """When Playwright succeeds, gstack is not called."""
+        mock_pw.return_value = "Valid description text " * 10
+        mock_browse.return_value = "Should not be called"
+
+        result = fetch_with_browser("https://example.com/job/123", browser=MagicMock())
+        assert result is not None
+        mock_browse.assert_not_called()
+
+    @patch("src.enricher.fetch_workday_playwright")
+    @patch("src.enricher.fetch_via_browse")
+    def test_playwright_fails_gstack_succeeds(self, mock_browse, mock_pw):
+        """When Playwright fails, falls back to gstack."""
+        mock_pw.return_value = None
+        mock_browse.return_value = "Fallback description " * 10
+
+        result = fetch_with_browser("https://example.com/job/123", browser=MagicMock())
+        assert result is not None
+        assert "Fallback" in result
+
+    @patch("src.enricher.fetch_workday_playwright")
+    @patch("src.enricher.fetch_via_browse")
+    def test_both_fail_returns_none(self, mock_browse, mock_pw):
+        """When both Playwright and gstack fail, returns None."""
+        mock_pw.return_value = None
+        mock_browse.return_value = None
+
+        result = fetch_with_browser("https://example.com/job/123", browser=MagicMock())
+        assert result is None
+
+
+# ── Greenhouse Tuple Return ──────────────────────────────────────────────────
+
+class TestFetchGreenhouseTuple:
+    @patch("src.enricher._http_get")
+    def test_expired_job_returns_tuple(self, mock_http):
+        """404 response returns (None, True) for expired."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_http.return_value = mock_response
+
+        text, expired = fetch_greenhouse("anthropic", "9999999")
+        assert text is None
+        assert expired is True
+
+    @patch("src.enricher._http_get")
+    def test_success_returns_tuple(self, mock_http):
+        """200 response returns (text, False)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"content": "<p>Java and AWS required</p>"}
+        mock_http.return_value = mock_response
+
+        text, expired = fetch_greenhouse("anthropic", "123456")
+        assert text is not None
+        assert "Java" in text
+        assert expired is False
+
+    @patch("src.enricher._http_get")
+    def test_network_error_returns_tuple(self, mock_http):
+        """None response returns (None, False)."""
+        mock_http.return_value = None
+
+        text, expired = fetch_greenhouse("anthropic", "123456")
+        assert text is None
+        assert expired is False
+
+
+# ── enrich_job with browser param ────────────────────────────────────────────
+
+class TestEnrichJobWithBrowser:
+    @patch("src.enricher.fetch_with_browser")
+    def test_workday_job_uses_fetch_with_browser(self, mock_fetch):
+        """Workday jobs route through fetch_with_browser."""
+        mock_fetch.return_value = "Java and AWS experience required. " * 10
+        job = {"url": "https://company.wd5.myworkdayjobs.com/job/123", "ats": "Workday"}
+        profile = {"skills": ["Java", "AWS"]}
+        mock_browser = MagicMock()
+
+        result = enrich_job(job, profile, browser=mock_browser)
+        assert result["unenriched"] is False
+        mock_fetch.assert_called_once_with(
+            "https://company.wd5.myworkdayjobs.com/job/123", mock_browser
+        )
+
+    @patch("src.enricher.fetch_with_browser")
+    def test_unknown_ats_uses_fetch_with_browser(self, mock_fetch):
+        """Unknown ATS jobs also route through fetch_with_browser."""
+        mock_fetch.return_value = None
+        job = {"url": "https://careers.example.com/job/123", "ats": "custom"}
+        profile = {"skills": ["Java"]}
+
+        result = enrich_job(job, profile, browser=None)
+        assert result["unenriched"] is True
+        mock_fetch.assert_called_once()
+
+
+# ── Incremental Enrichment Skip ─────────────────────────────────────────────
+
+class TestIncrementalSkip:
+    """Tests for incremental enrichment — skipping already-enriched jobs."""
+
+    @patch("src.enricher.enrich_job")
+    @patch("src.enricher.load_profile")
+    def test_skips_recently_enriched_jobs(self, mock_profile, mock_enrich, tmp_path):
+        """Jobs enriched within 7 days are skipped."""
+        from datetime import datetime, timezone
+
+        mock_profile.return_value = {"skills": ["Java"]}
+
+        scored_dir = tmp_path / "scored"
+        enriched_dir = tmp_path / "enriched"
+        scored_dir.mkdir()
+        enriched_dir.mkdir()
+
+        # Write scored data with 2 jobs
+        jobs = [
+            {"url": "https://a.com/1", "ats": "Greenhouse", "_priority": "P1", "_score": 90},
+            {"url": "https://b.com/2", "ats": "Lever", "_priority": "P1", "_score": 80},
+        ]
+        (scored_dir / "2026-03-22.json").write_text(json.dumps(jobs))
+
+        # Write existing enriched data — job A was enriched recently
+        existing = {
+            "https://a.com/1": {
+                "url": "https://a.com/1",
+                "unenriched": False,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+            }
+        }
+        (enriched_dir / "2026-03-22.json").write_text(json.dumps(existing))
+
+        # Mock enrich_job to return unenriched for any call
+        mock_enrich.return_value = {"url": "https://b.com/2", "unenriched": True, "expired": False, "fetched_at": datetime.now(timezone.utc).isoformat()}
+
+        with patch("src.enricher.SCORED_DIR", scored_dir), \
+             patch("src.enricher.ENRICHED_DIR", enriched_dir), \
+             patch("src.enricher.ensure_dirs"):
+            result = run_enricher(date="2026-03-22")
+
+        assert result["skipped"] == 1
+        # Only job B should have been submitted to enrich_job
+        assert mock_enrich.call_count == 1
+
+    @patch("src.enricher.enrich_job")
+    @patch("src.enricher.load_profile")
+    def test_does_not_skip_unenriched_jobs(self, mock_profile, mock_enrich, tmp_path):
+        """Jobs that were previously unenriched are retried."""
+        from datetime import datetime, timezone
+
+        mock_profile.return_value = {"skills": ["Java"]}
+
+        scored_dir = tmp_path / "scored"
+        enriched_dir = tmp_path / "enriched"
+        scored_dir.mkdir()
+        enriched_dir.mkdir()
+
+        jobs = [
+            {"url": "https://a.com/1", "ats": "Greenhouse", "_priority": "P1", "_score": 90},
+        ]
+        (scored_dir / "2026-03-22.json").write_text(json.dumps(jobs))
+
+        # Previously unenriched — should be retried
+        existing = {
+            "https://a.com/1": {
+                "url": "https://a.com/1",
+                "unenriched": True,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+            }
+        }
+        (enriched_dir / "2026-03-22.json").write_text(json.dumps(existing))
+
+        mock_enrich.return_value = {"url": "https://a.com/1", "unenriched": True, "expired": False, "fetched_at": datetime.now(timezone.utc).isoformat()}
+
+        with patch("src.enricher.SCORED_DIR", scored_dir), \
+             patch("src.enricher.ENRICHED_DIR", enriched_dir), \
+             patch("src.enricher.ensure_dirs"):
+            result = run_enricher(date="2026-03-22")
+
+        assert result["skipped"] == 0
+        assert mock_enrich.call_count == 1
+
+    @patch("src.enricher.enrich_job")
+    @patch("src.enricher.load_profile")
+    def test_does_not_skip_stale_enrichment(self, mock_profile, mock_enrich, tmp_path):
+        """Jobs enriched more than 7 days ago are re-enriched."""
+        from datetime import datetime, timezone, timedelta
+
+        mock_profile.return_value = {"skills": ["Java"]}
+
+        scored_dir = tmp_path / "scored"
+        enriched_dir = tmp_path / "enriched"
+        scored_dir.mkdir()
+        enriched_dir.mkdir()
+
+        jobs = [
+            {"url": "https://a.com/1", "ats": "Greenhouse", "_priority": "P1", "_score": 90},
+        ]
+        (scored_dir / "2026-03-22.json").write_text(json.dumps(jobs))
+
+        # Enriched 10 days ago — should be re-enriched
+        old_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        existing = {
+            "https://a.com/1": {
+                "url": "https://a.com/1",
+                "unenriched": False,
+                "fetched_at": old_date,
+            }
+        }
+        (enriched_dir / "2026-03-22.json").write_text(json.dumps(existing))
+
+        mock_enrich.return_value = {"url": "https://a.com/1", "unenriched": False, "skills_required": ["Java"], "fetched_at": datetime.now(timezone.utc).isoformat()}
+
+        with patch("src.enricher.SCORED_DIR", scored_dir), \
+             patch("src.enricher.ENRICHED_DIR", enriched_dir), \
+             patch("src.enricher.ensure_dirs"):
+            result = run_enricher(date="2026-03-22")
+
+        assert result["skipped"] == 0
+        assert mock_enrich.call_count == 1

@@ -51,6 +51,9 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      # Force Node.js 24 for GitHub Actions (Node 20 deprecated June 2026)
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
@@ -64,6 +67,15 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Validate dependencies
+        run: python scripts/check_deps.py
+
+      - name: Install Playwright (for Workday enrichment)
+        if: github.event_name != 'push'
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
 
       - name: Run tests
         run: python -m pytest tests/unit/ -q
@@ -94,6 +106,19 @@ jobs:
             scored-${{ env.YESTERDAY }}
             scored-
 
+      # Restore enriched data so incremental skip works (skip re-fetching
+      # job descriptions already enriched within 7 days).
+      - name: Restore enriched data cache
+        id: restore-enriched
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: data/enriched/
+          key: enriched-${{ env.TODAY }}
+          restore-keys: |
+            enriched-${{ env.YESTERDAY }}
+            enriched-
+
       # ── Pipeline ──────────────────────────────────────────────────────────
       # schedule / workflow_dispatch → full pipeline (fresh download + score)
       # push                        → site-only rebuild from cached scored data
@@ -104,8 +129,8 @@ jobs:
             echo "=== Full pipeline (download + score + enrich + reblend + report + site) ==="
             python -m src.scraper --skip-live
             python -m src.matcher                       # title-based scoring (~13s)
-            python -m src.enricher                      # fetch descriptions + extract skills (~8 min)
-            python -m src.matcher --reblend             # fast blend: apply skill match to scores (~1s)
+            python -m src.enricher || echo "⚠️  Enricher failed — continuing without enrichment"
+            python -m src.matcher --reblend || echo "⚠️  Reblend skipped — using title-only scores"
             python -m src.report
             python -m src.site_generator
           else
@@ -133,6 +158,14 @@ jobs:
         with:
           path: data/scored/
           key: scored-${{ env.TODAY }}
+
+      # Save enriched data so tomorrow's run skips already-enriched jobs
+      - name: Save enriched data cache
+        if: github.event_name != 'push' && steps.restore-enriched.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data/enriched/
+          key: enriched-${{ env.TODAY }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
