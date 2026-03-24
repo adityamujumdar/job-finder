@@ -3,8 +3,8 @@
 # Run this once after cloning to register skills with Claude Code globally.
 #
 # Usage:
-#   git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder
-#   cd ~/job-finder && ./setup
+#   git clone https://github.com/adityamujumdar/job-finder.git ~/.claude/skills/job-finder
+#   cd ~/.claude/skills/job-finder && ./setup
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -57,34 +57,57 @@ else
   ok "config/profile.yaml already exists"
 fi
 
-if [ ! -f "$SCRIPT_DIR/RESUME.md" ]; then
-  cp "$SCRIPT_DIR/RESUME.md.example" "$SCRIPT_DIR/RESUME.md"
-  warn "RESUME.md created from example — edit it with your work experience (it's gitignored)"
-else
+# RESUME.md is NOT auto-created from example.
+# /jobhunter will ask the user which resume file to use at runtime.
+if [ -f "$SCRIPT_DIR/RESUME.md" ]; then
   ok "RESUME.md already exists"
+else
+  ok "RESUME.md will be created when you run /jobhunter (it asks which resume to use)"
 fi
 
 # ── 4. Register skills with Claude Code ──────────────────────────────────────────
 step "Registering skills with Claude Code..."
 mkdir -p "$SKILLS_DIR"
 
-# Create symlinks for each skill so /jobhunter, /classify-jobs, /tailor-resume work globally
-SKILLS=("jobhunter" "classify-jobs" "tailor-resume" "enhance-jobs")
-for skill in "${SKILLS[@]}"; do
-  target="$SKILLS_DIR/$skill"
-  source_dir="$SCRIPT_DIR/$skill"
-  if [ ! -d "$source_dir" ]; then
-    warn "Skill directory not found: $source_dir — skipping $skill"
-    continue
+# Only create skill symlinks if we're inside a .claude/skills directory (gstack pattern)
+SKILLS_BASENAME="$(basename "$(dirname "$SCRIPT_DIR")")"
+REPO_NAME="$(basename "$SCRIPT_DIR")"
+
+if [ "$SKILLS_BASENAME" = "skills" ]; then
+  linked=()
+  for skill_dir in "$SCRIPT_DIR"/*/; do
+    if [ -f "$skill_dir/SKILL.md" ]; then
+      skill_name="$(basename "$skill_dir")"
+      target="$SKILLS_DIR/$skill_name"
+      # Create or update symlink; skip if a real file/directory exists
+      if [ -L "$target" ] || [ ! -e "$target" ]; then
+        ln -snf "$REPO_NAME/$skill_name" "$target"
+        linked+=("$skill_name")
+      fi
+    fi
+  done
+  if [ ${#linked[@]} -gt 0 ]; then
+    ok "Linked skills: ${linked[*]}"
   fi
-  # Overwrite existing symlink; skip if a real directory already exists (user's own skill)
-  if [ -L "$target" ] || [ ! -e "$target" ]; then
-    ln -snf "$source_dir" "$target"
-    ok "/$skill → $source_dir"
-  else
-    warn "/$skill already exists at $target (not a symlink) — skipping to avoid overwrite"
-  fi
-done
+else
+  # Fallback: not inside ~/.claude/skills/ — use absolute symlinks
+  warn "Not inside ~/.claude/skills/ — using absolute symlinks (consider cloning to ~/.claude/skills/job-finder)"
+  SKILLS=("jobhunter" "classify-jobs" "tailor-resume")
+  for skill in "${SKILLS[@]}"; do
+    target="$SKILLS_DIR/$skill"
+    source_dir="$SCRIPT_DIR/$skill"
+    if [ ! -d "$source_dir" ]; then
+      warn "Skill directory not found: $source_dir — skipping $skill"
+      continue
+    fi
+    if [ -L "$target" ] || [ ! -e "$target" ]; then
+      ln -snf "$source_dir" "$target"
+      ok "/$skill → $source_dir"
+    else
+      warn "/$skill already exists at $target (not a symlink) — skipping"
+    fi
+  done
+fi
 
 # ── 5. Update ~/.claude/CLAUDE.md ────────────────────────────────────────────────
 step "Updating ~/.claude/CLAUDE.md..."
@@ -105,11 +128,9 @@ Available skills:
 - \`/jobhunter\` — full pipeline: download 502K+ jobs → score → ranked dashboard
 - \`/classify-jobs\` — classify P1/P2 matches: APPLY NOW / THIS WEEK / STRETCH / SKIP
 - \`/tailor-resume\` — build a tailored HTML resume for a specific job (by ID or description)
-- \`/enhance-jobs\` — LLM-enhanced analysis: semantic title re-scoring, skill extraction via gstack/browse
 
 Trigger words (even without slash): "find me jobs", "job search", "classify my P1 jobs",
 "build resume for job #", "tailor my resume for [company]", "which jobs should I apply to",
-"enhance jobs", "rescore", "deep analysis"
 EOF
   ok "Added job-finder section to $CLAUDE_MD"
 fi
@@ -139,7 +160,7 @@ echo "  Available skills:"
 echo "     /jobhunter        → find and score 502K+ jobs"
 echo "     /classify-jobs    → rank matches: APPLY NOW / THIS WEEK / SKIP"
 echo "     /tailor-resume    → build a tailored resume for a specific job"
-echo "     /enhance-jobs     → LLM-enhanced analysis with gstack/browse"
+
 echo ""
 echo -e "  💡 ${GREEN}Type /jobhunter to start your job search!${NC}"
 echo ""

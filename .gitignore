@@ -6,6 +6,7 @@ data/jba/
 data/jobs/
 data/scored/
 data/reports/
+data/enriched/
 data/profile.json
 data/companies.json
 data/connections.json
@@ -22,7 +23,8 @@ RESUME.md
 *.pdf
 resumes/
 
-# Profile backups
+# User profile — contains PII (name, location, skills). Only example is tracked.
+config/profile.yaml
 config/*.bak.*
 
 # Generated dashboard — rebuilt by GitHub Actions on every deploy.
@@ -37,6 +39,9 @@ REVIEW-CEO.md
 REVIEW-ENG.md
 TODOS.md
 
+# Archive — old plans, superseded skills, completed reviews
+archive/
+
 # G-Stack state
 .gstack/
 
@@ -46,6 +51,9 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+
+# Pipeline history (user-specific)
+.context/
 
 # OS
 .DS_Store

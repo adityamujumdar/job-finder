@@ -92,7 +92,6 @@ These skills are available when working in this project (via `.jac/skills/`) and
 | `/jobhunter` | Run the full pipeline: download → match → report → dashboard |
 | `/classify-jobs` | Classify scored jobs into APPLY NOW / THIS WEEK / STRETCH / SKIP buckets |
 | `/tailor-resume` | Look up a job by ID and generate a tailored HTML/PDF resume |
-| `/enhance-jobs` | LLM-enhanced job analysis — title re-scoring, skill extraction, gstack browse |
 
 **When the user types any of these commands (or trigger phrases like "find me jobs",
 "classify my jobs", "build a resume for"), read the corresponding SKILL.md file from
@@ -101,11 +100,10 @@ the project root and follow its instructions exactly:**
 - `/jobhunter` or "find me jobs" → read `jobhunter/SKILL.md`
 - `/classify-jobs` or "which jobs should I apply to" → read `classify-jobs/SKILL.md`
 - `/tailor-resume` or "build a resume for" → read `tailor-resume/SKILL.md`
-- `/enhance-jobs` or "enhance", "rescore", "deep analysis" → read `enhance-jobs/SKILL.md`
 
 **Install globally** (enables these commands in any Claude Code project):
 ```bash
-git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder 2>/dev/null || (cd ~/job-finder && git pull); cd ~/job-finder && ./setup
+git clone https://github.com/adityamujumdar/job-finder.git ~/.claude/skills/job-finder && cd ~/.claude/skills/job-finder && ./setup
 ```
 
 ### gstack (Web Browsing, Code Review & Engineering Skills)
@@ -218,7 +216,7 @@ data format, and the pipeline doesn't care which one ran:
 Path 1: Claude Code (interactive)          Path 2: API (automated/CI)
 ┌─────────────────────────────┐    ┌─────────────────────────────┐
 │  YOU are Claude              │    │  src/llm.py calls API       │
-│  /jobhunter, /enhance-jobs   │    │  ANTHROPIC_API_KEY required  │
+│  /jobhunter, /classify-jobs   │    │  ANTHROPIC_API_KEY required  │
 │  /classify-jobs              │    │  Runs in CI, cron, scripts   │
 │  gstack/browse fetches JDs   │    │  ~$1/day (Haiku pricing)     │
 │  No API key needed           │    │  Falls back to regex if unset│
@@ -235,8 +233,7 @@ Path 1: Claude Code (interactive)          Path 2: API (automated/CI)
 
 ### Path 1: Claude Code Skills (no API key)
 - `/jobhunter` Step 1 auto-generates profile.yaml by reading your resume directly
-- `/jobhunter` Step 4b does quick title sanity check + fetches descriptions via gstack/browse
-- `/enhance-jobs` does deep semantic analysis: title re-scoring, skill extraction, browse
+- `/jobhunter` Step 4b does deep semantic analysis: title re-scoring for all P1 + top 30 P2, skill extraction, gstack/browse for up to 10 unenriched jobs
 - `/classify-jobs` already uses Claude for classification (APPLY NOW / SKIP)
 
 ### Path 2: Automated API (`src/llm.py`)

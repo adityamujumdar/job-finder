@@ -3,10 +3,11 @@
 This module is one of TWO ways Claude enhances the pipeline:
 
   Path 1: Claude Code (interactive) — no API key needed
-    User runs /jobhunter, /enhance-jobs, /classify-jobs skills.
+    User runs /jobhunter, /classify-jobs skills.
     Claude reads data directly and applies semantic understanding.
-    Uses gstack/browse to fetch job descriptions.
-    See: enhance-jobs/SKILL.md, jobhunter/SKILL.md
+    /jobhunter Step 4b does deep semantic analysis (title re-scoring,
+    skill extraction) + gstack/browse for job descriptions.
+    See: jobhunter/SKILL.md
 
   Path 2: Automated API (this module) — requires ANTHROPIC_API_KEY
     Called by src/resume_parser.py, src/enricher.py, src/matcher.py
