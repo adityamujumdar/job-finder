@@ -51,8 +51,17 @@ trend tracking, frame gaps as leveling-up opportunities not failures.
 
 Run this check first, every time. **Fix everything automatically — never tell the user to do it themselves.**
 
+**First: `cd` to the job-finder project directory.** The pipeline runs from there — all
+paths (config/, data/, src/) are relative to it. Read the project directory from
+`~/.claude/CLAUDE.md` (the `Project directory:` line in the `## job-finder` section),
+or default to `~/.claude/skills/job-finder`.
+
 ```bash
+# cd to the job-finder project directory
+JF_DIR="${JOBHUNTER_DIR:-$HOME/.claude/skills/job-finder}"
+cd "$JF_DIR"
 echo "=== JobHunter AI — Prerequisite Check ==="
+echo "📁 Project: $JF_DIR"
 
 # 1. Python environment — create if missing
 if [ ! -d ".venv" ]; then
@@ -74,44 +83,18 @@ else
   echo "✅ profile.yaml found"
 fi
 
-# 3. Resume check — BLOCKING. Pipeline requires a resume on file.
-#    Searches project root AND the user's original CWD for resume files.
-RESUME_FOUND=false
-RESUME_FILES=""
-# Check project root
-for f in RESUME.md *.pdf; do
-  [ -f "$f" ] && RESUME_FILES="$RESUME_FILES $PWD/$f"
-done
-# Check user's home directory for common resume locations
-for f in ~/Resume*.pdf ~/resume*.pdf ~/Resume*.md ~/resume*.md ~/Desktop/Resume*.pdf ~/Desktop/resume*.pdf ~/Documents/Resume*.pdf ~/Documents/resume*.pdf; do
-  [ -f "$f" ] && RESUME_FILES="$RESUME_FILES $f"
-done
-RESUME_FILES=$(echo "$RESUME_FILES" | xargs -n1 | sort -u)
-
+# 3. Resume check
 if [ -f "RESUME.md" ]; then
   echo "✅ RESUME.md found"
-  RESUME_FOUND=true
-elif [ -n "$RESUME_FILES" ]; then
-  echo "📄 Found resume file(s):"
-  echo "$RESUME_FILES" | while read -r f; do [ -n "$f" ] && echo "   • $f"; done
-  echo "RESUME_NEEDS_SELECTION=true"
 else
-  echo "❌ No resume found"
-  echo "   → Claude will ask you to provide one."
+  echo "❌ No RESUME.md"
 fi
 
 # 4. gstack/browse check — ADVISORY (not blocking).
-#    Browse lets us fetch job descriptions from company career pages not in JBA.
 if [ -d "$HOME/.claude/skills/gstack" ] && [ -f "$HOME/.claude/skills/gstack/browse/bin/find-browse" ]; then
-  echo "✅ gstack/browse available (can fetch non-JBA job descriptions)"
+  echo "✅ gstack/browse available"
 else
-  echo "⚠️  gstack not installed — browse (fetching job descriptions from career pages) unavailable"
-  echo "   To install: git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup"
-  echo "   Then add a 'gstack' section to CLAUDE.md that says to use /browse for all web browsing,"
-  echo "   never use mcp__claude-in-chrome__* tools, and lists available skills:"
-  echo "   /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,"
-  echo "   /design-consultation, /review, /ship, /browse, /qa, /qa-only,"
-  echo "   /design-review, /setup-browser-cookies, /retro, /debug, /document-release"
+  echo "⚠️  gstack not installed (optional — enables browsing company career pages)"
 fi
 ```
 
@@ -136,22 +119,14 @@ else:
 
 If profile.yaml was just created from example: proceed to Step 1 (Profile Setup) to customize it.
 If profile staleness check shows ⚠️: proceed with the pipeline — the matcher will rescore against the current profile.
-**If resume files were found but RESUME.md doesn't exist (RESUME_NEEDS_SELECTION=true):**
-Use AskUserQuestion to ask the user which resume file Claude should use. List all discovered
-files as options (with label = filename, description = full path), plus:
-- **"Point me to a different file"** — User gives a path.
-- **"I'll paste my resume here"** — User pastes text. Write to RESUME.md.
 
-After the user selects a file, read it and convert to RESUME.md in the project directory.
-For PDFs: use `src/resume_parser.py` to extract text, then write RESUME.md.
-For .md files: copy directly to RESUME.md.
+**If RESUME.md is missing:** Stop and use AskUserQuestion to ask the user for their resume:
+1. **"I have a resume file"** — Ask for the path. Read it (PDF or text), write to RESUME.md.
+2. **"I'll paste my resume"** — Accept pasted text, write to RESUME.md.
+3. **"Skip for now"** — Warn that the pipeline needs a resume to generate a profile. Continue but skip profile auto-generation.
 
-**If NO resume files were found at all:** Stop and use AskUserQuestion:
-1. **"Point me to your resume file"** — User gives a path. Read and convert to RESUME.md.
-2. **"I'll paste it here"** — User pastes text. Write to RESUME.md.
-3. **"I have a PDF I'll drop in this folder"** — Tell them to add a .pdf and re-run.
-
-**Do NOT proceed with the pipeline until a resume is present.**
+**Do NOT scan the filesystem for resume files.** Just ask the user directly.
+**Do NOT proceed with the full pipeline until a resume is present.**
 **For all other issues: never stop. Never tell the user to "run X first." Fix it and keep going.**
 
 ---
