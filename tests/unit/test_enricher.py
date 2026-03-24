@@ -22,12 +22,16 @@ from src.enricher import (
     compute_skill_match_pct,
     _html_to_text,
     _is_login_page,
+    _is_expired_page,
     fetch_workday_playwright,
     fetch_with_browser,
     fetch_greenhouse,
+    fetch_lever,
+    fetch_ashby,
     enrich_job,
     run_enricher,
     MIN_DESCRIPTION_CHARS,
+    EXPIRED_MAX_CHARS,
 )
 from src.matcher import blend_enriched_score
 
@@ -294,6 +298,214 @@ class TestIsLoginPage:
         # Only one marker — should NOT be flagged
         text = "Sign in to apply for this position. Java required."
         assert _is_login_page(text) is False
+
+
+# ── Expired Page Detection ───────────────────────────────────────────────────
+
+class TestIsExpiredPage:
+    """Content-based detection of expired/dead job listing pages.
+
+    Workday (and other ATS) return HTTP 200 for expired jobs with a short
+    message. The function detects these via marker phrases + length gate.
+    """
+
+    def test_detects_workday_expired(self):
+        text = "The job is no longer available. Please search for other opportunities."
+        assert _is_expired_page(text) is True
+
+    def test_detects_filled_position(self):
+        text = "This position has been filled. Thank you for your interest."
+        assert _is_expired_page(text) is True
+
+    def test_detects_closed_job(self):
+        text = "This job is closed. View similar jobs on our careers page."
+        assert _is_expired_page(text) is True
+
+    def test_detects_no_longer_accepting(self):
+        text = "This role is no longer accepting applications."
+        assert _is_expired_page(text) is True
+
+    def test_does_not_flag_real_job_description(self):
+        """A real JD should never be flagged as expired."""
+        text = (
+            "About the Role\n"
+            "We are looking for a Senior Software Engineer to join our platform team.\n"
+            "Requirements: Java, Python, AWS, 5+ years experience.\n"
+            "This is a full-time position based in San Francisco.\n"
+        ) * 5  # make it >100 chars but still reasonable
+        assert _is_expired_page(text) is False
+
+    def test_long_page_with_expired_phrase_is_not_flagged(self):
+        """A long JD that incidentally mentions 'position has been filled' should NOT
+        be flagged — the length gate prevents false positives."""
+        text = (
+            "We are hiring a Software Engineer. " * 50
+            + "Once this position has been filled, the team will expand to 10 people. "
+            + "Requirements: Java, Python, AWS. " * 20
+        )
+        assert len(text) > EXPIRED_MAX_CHARS  # verify it's long
+        assert _is_expired_page(text) is False
+
+    def test_short_text_without_markers_is_not_flagged(self):
+        """Short text without expired markers should not be flagged."""
+        text = "Loading... please wait."
+        assert _is_expired_page(text) is False
+
+    def test_case_insensitive(self):
+        """Detection should be case-insensitive."""
+        text = "THE JOB IS NO LONGER AVAILABLE"
+        assert _is_expired_page(text) is True
+
+    def test_real_workday_expired_page(self):
+        """Exact text from a real dead Workday job page (HTTP 200, JS-rendered).
+
+        URL: https://workday.wd5.myworkdayjobs.com/workday/job/USA-CA-Pleasanton/
+             People-Analytics-Data-Scientist_JR-0104261-1
+        Workday returns a generic "page doesn't exist" page for taken-down jobs.
+        """
+        text = (
+            "Skip to main contentCareers at WorkdayEnglishSign InCareers Page"
+            "Search for JobsJoin Our Talent Community!\n\n"
+            "The page you are looking for doesn't exist."
+            "Search for JobsFollow UsRecruitment Privacy Statement"
+            "\u00a9 2026 Workday, Inc. All rights reserved."
+        )
+        assert _is_expired_page(text) is True
+
+
+# ── Lever Tuple Return ───────────────────────────────────────────────────────
+
+class TestFetchLeverTuple:
+    @patch("src.enricher._http_get")
+    def test_expired_job_returns_tuple(self, mock_http):
+        """404 response returns (None, True) for expired."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_http.return_value = mock_response
+
+        text, expired = fetch_lever("netflix", "abc-123")
+        assert text is None
+        assert expired is True
+
+    @patch("src.enricher._http_get")
+    def test_success_returns_tuple(self, mock_http):
+        """200 response returns (text, False)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "descriptionPlain": "Java and AWS required. " * 10,
+        }
+        mock_http.return_value = mock_response
+
+        text, expired = fetch_lever("netflix", "abc-123")
+        assert text is not None
+        assert "Java" in text
+        assert expired is False
+
+    @patch("src.enricher._http_get")
+    def test_network_error_returns_tuple(self, mock_http):
+        """None response returns (None, False)."""
+        mock_http.return_value = None
+
+        text, expired = fetch_lever("netflix", "abc-123")
+        assert text is None
+        assert expired is False
+
+
+# ── Ashby Tuple Return ───────────────────────────────────────────────────────
+
+class TestFetchAshbyTuple:
+    @patch("src.enricher._http_get")
+    def test_expired_job_returns_tuple(self, mock_http):
+        """404 response returns (None, True) for expired."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_http.return_value = mock_response
+
+        text, expired = fetch_ashby("anthropic", "abc-123")
+        assert text is None
+        assert expired is True
+
+    @patch("src.enricher._http_get")
+    def test_success_returns_tuple(self, mock_http):
+        """200 response returns (text, False)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "descriptionPlain": "Python and Kubernetes required. " * 10,
+        }
+        mock_http.return_value = mock_response
+
+        text, expired = fetch_ashby("anthropic", "abc-123")
+        assert text is not None
+        assert "Python" in text
+        assert expired is False
+
+    @patch("src.enricher._http_get")
+    def test_network_error_returns_tuple(self, mock_http):
+        """None response returns (None, False)."""
+        mock_http.return_value = None
+
+        text, expired = fetch_ashby("anthropic", "abc-123")
+        assert text is None
+        assert expired is False
+
+
+# ── Expired Content Detection in enrich_job ──────────────────────────────────
+
+class TestEnrichJobExpiredContent:
+    """Tests that enrich_job marks jobs as expired when the page content
+    indicates the job is no longer available (especially Workday)."""
+
+    @patch("src.enricher.fetch_with_browser")
+    def test_workday_expired_page_marked_expired(self, mock_fetch):
+        """Workday page returning 'job no longer available' text should be expired."""
+        mock_fetch.return_value = "The job is no longer available. Please search for other opportunities."
+        job = {"url": "https://company.wd5.myworkdayjobs.com/job/123", "ats": "Workday"}
+        profile = {"skills": ["Java"]}
+
+        result = enrich_job(job, profile, browser=MagicMock())
+        assert result["expired"] is True
+        assert result.get("unenriched") is False
+
+    @patch("src.enricher.fetch_with_browser")
+    def test_workday_valid_page_not_expired(self, mock_fetch):
+        """Workday page with real JD should NOT be marked expired."""
+        mock_fetch.return_value = "Java and AWS experience required. " * 20
+        job = {"url": "https://company.wd5.myworkdayjobs.com/job/123", "ats": "Workday"}
+        profile = {"skills": ["Java", "AWS"]}
+
+        result = enrich_job(job, profile, browser=MagicMock())
+        assert result["expired"] is False
+        assert result.get("unenriched") is False
+
+    @patch("src.enricher.fetch_with_browser")
+    def test_real_workday_doesnt_exist_page(self, mock_fetch):
+        """Real Workday 'page doesn't exist' text should mark job as expired.
+
+        This is the exact text returned by Playwright for:
+        https://workday.wd5.myworkdayjobs.com/workday/job/USA-CA-Pleasanton/
+        People-Analytics-Data-Scientist_JR-0104261-1
+        """
+        mock_fetch.return_value = (
+            "Skip to main contentCareers at WorkdayEnglishSign InCareers Page"
+            "Search for JobsJoin Our Talent Community!\n\n"
+            "The page you are looking for doesn't exist."
+            "Search for JobsFollow UsRecruitment Privacy Statement"
+            "\u00a9 2026 Workday, Inc. All rights reserved."
+        )
+        job = {
+            "url": "https://workday.wd5.myworkdayjobs.com/workday/job/USA-CA-Pleasanton/"
+                   "People-Analytics-Data-Scientist_JR-0104261-1",
+            "ats": "Workday",
+        }
+        profile = {"skills": ["Python", "SQL"]}
+
+        result = enrich_job(job, profile, browser=MagicMock())
+        assert result["expired"] is True
+        assert result.get("unenriched") is False
+        # Should NOT have extracted any skills from the error page boilerplate
+        assert "skills_required" not in result
 
 
 # ── Playwright Fetch ─────────────────────────────────────────────────────────
