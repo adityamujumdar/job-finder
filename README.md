@@ -36,7 +36,7 @@ Then Claude helps you act on the best ones — classify which to apply to first,
 ### Step 1 — Open Claude Code and paste this
 
 ```
-git clone https://github.com/adityamujumdar/job-finder.git ~/job-finder 2>/dev/null || (cd ~/job-finder && git pull); cd ~/job-finder && ./setup
+Install JobHunter AI: run git clone https://github.com/adityamujumdar/job-finder.git ~/.claude/skills/job-finder && cd ~/.claude/skills/job-finder && ./setup then add a "job-finder" section to CLAUDE.md that says to load the relevant skill when the user wants to find jobs, classify matches, or build a tailored resume, and lists the available skills: /jobhunter, /classify-jobs, /tailor-resume. Then ask the user if they also want to add job-finder to the current project so teammates get it.
 ```
 
 Claude installs everything, registers the skills, then asks what kind of jobs you're looking for:
@@ -117,7 +117,7 @@ Have the dashboard refresh every morning — no manual runs needed.
 
 **1.** Push to your GitHub:
 ```bash
-cd ~/job-finder
+cd ~/.claude/skills/job-finder
 git remote set-url origin https://github.com/YOUR-USERNAME/job-finder.git
 git push -u origin main
 ```
@@ -211,7 +211,7 @@ job-finder/
 ├── jobhunter/SKILL.md           # /jobhunter skill
 ├── classify-jobs/SKILL.md       # /classify-jobs skill
 ├── tailor-resume/SKILL.md       # /tailor-resume skill
-├── RESUME.md                    # Your resume (gitignored)
+├── RESUME.md                    # Your resume (created by /jobhunter, gitignored)
 └── .github/workflows/daily.yml  # Cron pipeline
 ```
 

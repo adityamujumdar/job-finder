@@ -75,20 +75,29 @@ else
 fi
 
 # 3. Resume check — BLOCKING. Pipeline requires a resume on file.
-#    Checks for RESUME.md or any PDF in the project root.
+#    Searches project root AND the user's original CWD for resume files.
 RESUME_FOUND=false
+RESUME_FILES=""
+# Check project root
+for f in RESUME.md *.pdf; do
+  [ -f "$f" ] && RESUME_FILES="$RESUME_FILES $PWD/$f"
+done
+# Check user's home directory for common resume locations
+for f in ~/Resume*.pdf ~/resume*.pdf ~/Resume*.md ~/resume*.md ~/Desktop/Resume*.pdf ~/Desktop/resume*.pdf ~/Documents/Resume*.pdf ~/Documents/resume*.pdf; do
+  [ -f "$f" ] && RESUME_FILES="$RESUME_FILES $f"
+done
+RESUME_FILES=$(echo "$RESUME_FILES" | xargs -n1 | sort -u)
+
 if [ -f "RESUME.md" ]; then
   echo "✅ RESUME.md found"
   RESUME_FOUND=true
-elif ls *.pdf 1>/dev/null 2>&1; then
-  PDF_NAME=$(ls *.pdf | head -1)
-  echo "✅ Resume PDF found: $PDF_NAME"
-  RESUME_FOUND=true
+elif [ -n "$RESUME_FILES" ]; then
+  echo "📄 Found resume file(s):"
+  echo "$RESUME_FILES" | while read -r f; do [ -n "$f" ] && echo "   • $f"; done
+  echo "RESUME_NEEDS_SELECTION=true"
 else
-  echo "❌ No resume found (need RESUME.md or a .pdf in this directory)"
-  echo "   → Add your resume before running the pipeline."
-  echo "   → Options: copy a PDF here, or create RESUME.md from the example:"
-  echo "     cp RESUME.md.example RESUME.md && open RESUME.md"
+  echo "❌ No resume found"
+  echo "   → Claude will ask you to provide one."
 fi
 
 # 4. gstack/browse check — ADVISORY (not blocking).
@@ -127,10 +136,21 @@ else:
 
 If profile.yaml was just created from example: proceed to Step 1 (Profile Setup) to customize it.
 If profile staleness check shows ⚠️: proceed with the pipeline — the matcher will rescore against the current profile.
-**If no resume was found (RESUME_FOUND=false):** Stop and use AskUserQuestion to ask the user to add their resume. Offer these options:
+**If resume files were found but RESUME.md doesn't exist (RESUME_NEEDS_SELECTION=true):**
+Use AskUserQuestion to ask the user which resume file Claude should use. List all discovered
+files as options (with label = filename, description = full path), plus:
+- **"Point me to a different file"** — User gives a path.
+- **"I'll paste my resume here"** — User pastes text. Write to RESUME.md.
+
+After the user selects a file, read it and convert to RESUME.md in the project directory.
+For PDFs: use `src/resume_parser.py` to extract text, then write RESUME.md.
+For .md files: copy directly to RESUME.md.
+
+**If NO resume files were found at all:** Stop and use AskUserQuestion:
 1. **"Point me to your resume file"** — User gives a path. Read and convert to RESUME.md.
 2. **"I'll paste it here"** — User pastes text. Write to RESUME.md.
 3. **"I have a PDF I'll drop in this folder"** — Tell them to add a .pdf and re-run.
+
 **Do NOT proceed with the pipeline until a resume is present.**
 **For all other issues: never stop. Never tell the user to "run X first." Fix it and keep going.**
 
