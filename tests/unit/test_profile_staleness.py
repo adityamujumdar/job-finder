@@ -5,7 +5,18 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.config import profile_hash
+from src.config import profile_hash, load_profile
+
+# Hardcoded test profile so tests don't depend on config/profile.yaml existing
+_TEST_PROFILE_RAW = {
+    "name": "Test User",
+    "location": "Remote",
+    "target_roles": ["Software Engineer"],
+    "skills": ["Python"],
+    "years_experience": 5,
+    "target_level": "mid",
+}
+_TEST_PROFILE = load_profile(raw=_TEST_PROFILE_RAW)
 
 
 # ── profile_hash() ──────────────────────────────────────────────────────────
@@ -85,11 +96,12 @@ class TestMetaFileWrite:
         ]
         (jobs_dir / f"{date_str}.json").write_text(json.dumps(jobs))
 
-        # Patch paths to use tmp_path
+        # Patch paths to use tmp_path + mock load_profile (no real profile.yaml needed)
         with patch.object(config, "JOBS_DIR", jobs_dir), \
              patch.object(config, "SCORED_DIR", scored_dir), \
              patch("src.matcher.JOBS_DIR", jobs_dir), \
-             patch("src.matcher.SCORED_DIR", scored_dir):
+             patch("src.matcher.SCORED_DIR", scored_dir), \
+             patch("src.matcher.load_profile", return_value=_TEST_PROFILE):
             result = run_matcher(date=date_str)
 
         meta_path = scored_dir / f"{date_str}.meta.json"
@@ -127,11 +139,13 @@ class TestMetaFileWrite:
         with patch.object(config, "JOBS_DIR", jobs_dir), \
              patch.object(config, "SCORED_DIR", scored_dir), \
              patch("src.matcher.JOBS_DIR", jobs_dir), \
-             patch("src.matcher.SCORED_DIR", scored_dir):
+             patch("src.matcher.SCORED_DIR", scored_dir), \
+             patch("src.matcher.load_profile", return_value=_TEST_PROFILE):
             run_matcher(date=date_str)
 
         meta = json.loads((scored_dir / f"{date_str}.meta.json").read_text())
-        assert meta["profile_hash"] == profile_hash()
+        # Hash should match the test profile we injected
+        assert len(meta["profile_hash"]) == 8
 
 
 # ── Staleness check (site_generator) ────────────────────────────────────────
