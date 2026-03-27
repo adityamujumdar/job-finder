@@ -40,6 +40,7 @@ outcomes. Every bullet should answer: "So what? Why did this matter?"
 ---
 
 ## NEVER:
+- Write RESUME.md without first showing the user a formatted preview and getting explicit confirmation
 - Fabricate experience, skills, or companies — RESUME.md is the only source of truth
 - Write the resume before reading RESUME.md, profile.yaml, AND the full job description
 - Save a resume file without telling the user exactly where it was saved
@@ -118,7 +119,8 @@ fi
 
 1. **"Point me to your resume file"** — User gives a path (e.g. `~/Documents/resume.pdf`, `~/Desktop/Resume.docx`). Read the file, extract the content, and write it to `RESUME.md` in markdown format.
 2. **"I'll paste it here"** — User pastes their resume text. Parse it and write to `RESUME.md`.
-3. **"I have it on LinkedIn"** — Browse their LinkedIn profile to extract experience, then write `RESUME.md`.
+3. **"Just let me dump my work history"** — User dumps unstructured "word vomit" about their experience. Follow the **Word Vomit → Resume** flow defined in `jobhunter/SKILL.md` Step 0 to format it into a proper RESUME.md. Show the formatted preview and get confirmation before saving.
+4. **"I have it on LinkedIn"** — Browse their LinkedIn profile to extract experience, then write `RESUME.md`.
 
 After the user provides their resume (by any method), convert it to clean markdown and save as `RESUME.md`:
 ```bash

@@ -123,11 +123,95 @@ If profile staleness check shows ⚠️: proceed with the pipeline — the match
 **If RESUME.md is missing:** Stop and use AskUserQuestion to ask the user for their resume:
 1. **"I have a resume file"** — Ask for the path. Read it (PDF or text), write to RESUME.md.
 2. **"I'll paste my resume"** — Accept pasted text, write to RESUME.md.
-3. **"Skip for now"** — Warn that the pipeline needs a resume to generate a profile. Continue but skip profile auto-generation.
+3. **"Just let me dump my work history"** — Accept unstructured "word vomit" and format it into a proper resume. See **Word Vomit → Resume** flow below.
+4. **"Skip for now"** — Warn that the pipeline needs a resume to generate a profile. Continue but skip profile auto-generation.
 
 **Do NOT scan the filesystem for resume files.** Just ask the user directly.
 **Do NOT proceed with the full pipeline until a resume is present.**
+**NEVER write RESUME.md without first showing the user a formatted preview and getting explicit confirmation via AskUserQuestion.** This applies to ALL resume intake methods above — file, paste, and word vomit.
 **For all other issues: never stop. Never tell the user to "run X first." Fix it and keep going.**
+
+### Word Vomit → Resume Flow
+
+When the user selects option 3 ("Just let me dump my work history"), follow this flow:
+
+**1. Accept the dump.** Tell the user:
+> "Go ahead — dump everything you remember about your work history. Job titles, companies,
+> dates, what you built, technologies, anything. Don't worry about formatting or order.
+> I'll organize it into a proper resume."
+
+Let the user type freely. They may send one big message or several. Wait until they signal
+they're done (e.g., "that's it", "done", or a natural stopping point). If the dump is very
+thin (<3 jobs or <100 words), ask: "Is there anything else? More projects, skills, education?"
+
+**2. Format into structured RESUME.md.** Using `RESUME.md.example` as the target format, organize
+the word vomit into a clean markdown resume with these required sections in this order:
+
+```markdown
+# [Full Name] — Resume
+
+**Contact:** [City, ST] · [email] · [LinkedIn URL]
+
+---
+
+## Experience
+
+### [Company Name] — [Job Title]
+**[Start Date] – [End Date or Present]**
+
+- [Achievement bullet — impact-first, with metrics where mentioned]
+- [Key project or technical work]
+- [Tools/technologies used]
+
+(repeat for each role, reverse-chronological order)
+
+---
+
+## Projects  (if mentioned)
+
+- **[Project Name]** — [One-line description] — *[Technologies]*
+
+---
+
+## Skills & Tools
+
+**Programming:** [languages mentioned]
+**Frameworks:** [frameworks mentioned]
+**Cloud & Data:** [infrastructure/data tools mentioned]
+
+---
+
+## Education
+
+**[University]** — [Degree], [Major]
+```
+
+**Rules for formatting:**
+- **ONLY use information the user provided.** Never fabricate companies, roles, dates, skills, or achievements.
+- If a date range is vague ("a couple years at Google"), write "~2 years" and flag it for the user to correct.
+- If the user mentioned skills but didn't tie them to specific roles, put them in the Skills section.
+- Preserve the user's voice in bullet points — clean up grammar and structure but don't rewrite their accomplishments into something they didn't say.
+- Group roles in reverse-chronological order (most recent first). If order is unclear, make your best guess and flag it.
+- If contact info (email, location, LinkedIn) wasn't provided, leave placeholders: `[your@email.com]`, `[City, ST]`, `[LinkedIn URL]`.
+
+**3. Show the preview and ask.** Display the formatted resume in full, then use AskUserQuestion:
+
+> "Here's your formatted resume based on what you shared. Take a look:"
+
+```bash
+# Guard: warn if RESUME.md already exists
+if [ -f "RESUME.md" ]; then
+  echo "⚠️  RESUME.md already exists. Saving will overwrite it."
+fi
+```
+
+Options:
+- **"Looks good — save it"** → Write to RESUME.md. Print: `✅ Saved RESUME.md — this stays local and is never uploaded anywhere.`
+- **"I want to edit some things"** → Ask what to change. Apply edits, show updated preview, re-ask.
+- **"Start over"** → Go back to step 1 of this flow.
+
+**4. Continue to Step 1.** After RESUME.md is saved, proceed normally to profile auto-generation.
+The existing `resume_parser.py` will parse the structured RESUME.md into `profile.yaml`.
 
 ---
 

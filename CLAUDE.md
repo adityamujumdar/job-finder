@@ -97,7 +97,7 @@ These skills are available when working in this project (via `.jac/skills/`) and
 "classify my jobs", "build a resume for"), read the corresponding SKILL.md file from
 the project root and follow its instructions exactly:**
 
-- `/jobhunter` or "find me jobs" → read `jobhunter/SKILL.md`
+- `/jobhunter` or "find me jobs" or "build my resume from my work history" → read `jobhunter/SKILL.md`
 - `/classify-jobs` or "which jobs should I apply to" → read `classify-jobs/SKILL.md`
 - `/tailor-resume` or "build a resume for" → read `tailor-resume/SKILL.md`
 
