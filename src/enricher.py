@@ -35,17 +35,23 @@ Data flow:
              expired, unenriched, fetched_at } }
 
 Shadow paths:
-  404/410 → expired=True, no skills
-  429     → backoff 2/4/8s, then unenriched=True
-  timeout → unenriched=True
-  empty   → unenriched=True
-  no text → unenriched=True
+  404/410          → expired=True, no skills (Greenhouse/Lever/Ashby)
+  expired content  → expired=True, no skills (Workday "page doesn't exist" etc.)
+  429              → backoff 2/4/8s, then unenriched=True
+  timeout          → unenriched=True
+  empty            → unenriched=True
+  no text          → unenriched=True
 
 Browser fallback chain (Workday/unknown ATS):
   1. Playwright headless (works in CI + local)
      → wait for content selector → login page detection
   2. gstack/browse (local only, requires manual install)
   3. Both fail → unenriched=True (graceful degradation)
+
+Expired detection (two layers):
+  Layer 1: HTTP status — 404/410 from API fetchers (Greenhouse/Lever/Ashby)
+  Layer 2: Content — EXPIRED_MARKERS in short (<1000 char) page text
+           Catches Workday SPA pages that return HTTP 200 for dead jobs.
 """
 
 from __future__ import annotations
@@ -244,17 +250,22 @@ def fetch_greenhouse(slug: str, job_id: str) -> tuple[str | None, bool]:
         return (None, False)
 
 
-def fetch_lever(slug: str, job_id: str) -> str | None:
+def fetch_lever(slug: str, job_id: str) -> tuple[str | None, bool]:
     """Fetch job description from Lever posting API.
 
-    Returns cleaned plain text or None on failure.
+    Returns (cleaned_text, expired) tuple:
+      - (text, False) on success
+      - (None, True) if job is expired (404)
+      - (None, False) on other failures
     """
     api_url = f"https://api.lever.co/v0/postings/{slug}/{job_id}"
     r = _http_get(api_url)
-    if r is None or r.status_code == 404:
-        return None
+    if r is None:
+        return (None, False)
+    if r.status_code == 404:
+        return (None, True)  # expired listing
     if r.status_code != 200:
-        return None
+        return (None, False)
     try:
         data = r.json()
         # Lever returns { lists: [{text, content: [{text}]}], description, ... }
@@ -268,33 +279,38 @@ def fetch_lever(slug: str, job_id: str) -> str | None:
             for item in section.get("content", []):
                 parts.append(item.get("text", ""))
         text = "\n".join(p for p in parts if p)
-        return text if len(text) >= MIN_DESCRIPTION_CHARS else None
+        return (text, False) if len(text) >= MIN_DESCRIPTION_CHARS else (None, False)
     except Exception as e:
         log.debug("Lever parse error for %s/%s: %s", slug, job_id, e)
-        return None
+        return (None, False)
 
 
-def fetch_ashby(slug: str, job_id: str) -> str | None:
+def fetch_ashby(slug: str, job_id: str) -> tuple[str | None, bool]:
     """Fetch job description from Ashby posting API.
 
-    Returns cleaned plain text or None on failure.
+    Returns (cleaned_text, expired) tuple:
+      - (text, False) on success
+      - (None, True) if job is expired (404)
+      - (None, False) on other failures
     """
     api_url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}/posting/{job_id}"
     r = _http_get(api_url)
-    if r is None or r.status_code == 404:
-        return None
+    if r is None:
+        return (None, False)
+    if r.status_code == 404:
+        return (None, True)  # expired listing
     if r.status_code != 200:
-        return None
+        return (None, False)
     try:
         data = r.json()
         # Ashby returns descriptionHtml or descriptionPlain at top level
         if data.get("descriptionPlain"):
-            return data["descriptionPlain"]
+            return (data["descriptionPlain"], False)
         if data.get("descriptionHtml"):
-            return _html_to_text(data["descriptionHtml"])
+            return (_html_to_text(data["descriptionHtml"]), False)
     except Exception as e:
         log.debug("Ashby parse error for %s/%s: %s", slug, job_id, e)
-    return None
+    return (None, False)
 
 
 def fetch_via_browse(url: str) -> str | None:
@@ -341,6 +357,34 @@ WORKDAY_SELECTORS = [
 # the page is a login/auth wall, not the job description.
 LOGIN_MARKERS = ["sign in", "create account", "workdayloginform", "forgot password"]
 
+# Expired/dead job page markers — phrases that indicate the job listing has been
+# removed, filled, or is no longer accepting applications. Checked after successful
+# text fetch (especially Workday, which returns HTTP 200 for dead jobs).
+EXPIRED_MARKERS = [
+    "job is no longer available",
+    "job you are looking for no longer exists",
+    "position has been filled",
+    "job posting is no longer active",
+    "position is no longer available",
+    "requisition is no longer active",
+    "no longer accepting applications",
+    "position has been closed",
+    "job has expired",
+    "job has been removed",
+    "this job is closed",
+    "this role has been filled",
+    "job no longer exists",
+    # Workday SPA — renders "The page you are looking for doesn't exist."
+    # when a job posting has been taken down (HTTP 200, JS-rendered).
+    "page you are looking for doesn't exist",
+    "page you are looking for does not exist",
+]
+
+# Max text length to consider for expired detection. Real job descriptions are
+# typically 1000+ chars. Expired pages are short boilerplate (200-500 chars).
+# This prevents false positives on long JDs that mention "position filled" in context.
+EXPIRED_MAX_CHARS = 1000
+
 
 def _is_login_page(text: str) -> bool:
     """Detect if page text is a Workday login page instead of a job description."""
@@ -349,6 +393,23 @@ def _is_login_page(text: str) -> bool:
     # that mention "create account" in benefits text
     matches = sum(1 for marker in LOGIN_MARKERS if marker in text_lower)
     return matches >= 2
+
+
+def _is_expired_page(text: str) -> bool:
+    """Detect if fetched page text is an expired/dead job listing.
+
+    Workday (and some other ATS platforms) return HTTP 200 for expired jobs
+    with a short message like "The job is no longer available." This check
+    catches those cases that HTTP status codes miss.
+
+    Uses a dual gate: text must match an expired marker AND be shorter than
+    EXPIRED_MAX_CHARS. This prevents false positives on real job descriptions
+    that incidentally mention "position has been filled" in context.
+    """
+    if len(text) > EXPIRED_MAX_CHARS:
+        return False
+    text_lower = text.lower()
+    return any(marker in text_lower for marker in EXPIRED_MARKERS)
 
 
 def fetch_workday_playwright(url: str, browser: Any = None) -> str | None:
@@ -606,13 +667,13 @@ def enrich_job(job: dict, profile: dict, browser: Any = None) -> dict[str, Any]:
             info = extract_lever_info(url)
             if info:
                 slug, job_id = info
-                description_text = fetch_lever(slug, job_id)
+                description_text, expired = fetch_lever(slug, job_id)
 
         elif ats == "ashby":
             info = extract_ashby_info(url)
             if info:
                 slug, job_id = info
-                description_text = fetch_ashby(slug, job_id)
+                description_text, expired = fetch_ashby(slug, job_id)
 
         elif ats in ("workday", "unknown"):
             # Workday has no clean JSON API, unknown ATS is best-effort.
@@ -621,6 +682,19 @@ def enrich_job(job: dict, profile: dict, browser: Any = None) -> dict[str, Any]:
 
     except Exception as e:
         log.warning("Unexpected error enriching %s: %s", url, e)
+
+    # Content-based expired detection — catches Workday (and other ATS) pages
+    # that return HTTP 200 with "The job is no longer available" text.
+    # Must run BEFORE the length gate and skill extraction to catch short
+    # expired boilerplate that would otherwise be marked as unenriched.
+    if description_text and not expired and _is_expired_page(description_text):
+        log.debug("Expired page content detected for %s", url)
+        return {
+            "url": url,
+            "expired": True,
+            "unenriched": False,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     if not description_text or len(description_text) < MIN_DESCRIPTION_CHARS:
         return {
